@@ -48,9 +48,26 @@ def check_domain(url: str, allowlist: list[str]) -> dict:
     endswith() on the entry anchored with a leading "." is what prevents it,
     because the real domain must be the suffix, not just present somewhere
     in the string.
+
+    SECOND VULNERABILITY, FOUND AND FIXED VIA ADVERSARIAL MODEL REVIEW:
+    An earlier version of this function used parsed.netloc instead of
+    parsed.hostname. netloc includes the port and any embedded credentials,
+    not just the host. This allowed a port-injection bypass:
+
+        url = "https://evil.com:.tsmc.com/fake-news"
+        parsed.netloc   -> "evil.com:.tsmc.com"  (ends with ".tsmc.com" -> WRONGLY PASSES)
+        parsed.hostname -> "evil.com"            (correctly identifies the real host)
+
+    This was confirmed as a live, working bypass against this exact function
+    (not just a theoretical urlparse quirk) before being fixed. Using
+    parsed.hostname instead of parsed.netloc strips ports and credentials
+    before comparison, closing this bypass. Do not revert to netloc.
     """
     parsed = urlparse(url)
-    domain = parsed.netloc.lower()
+    domain = (parsed.hostname or "").lower()
+
+    # Strip a trailing "." for fully-qualified DNS names (e.g. "tsmc.com.")
+    domain = domain.rstrip(".")
 
     # Strip a leading "www." for consistent comparison
     if domain.startswith("www."):
