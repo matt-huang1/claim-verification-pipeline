@@ -20,3 +20,5 @@ env/
 *.env
 
 .DS_Store
+
+logs/

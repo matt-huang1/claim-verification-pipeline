@@ -1,2 +1,7 @@
 [tool.black]
 line-length = 88
+
+[tool.pytest.ini_options]
+markers = [
+    "live_api: hits the real OpenAI API (costs money, needs network + key); run deliberately",
+]
