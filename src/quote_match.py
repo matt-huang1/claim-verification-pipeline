@@ -144,11 +144,13 @@ _MASK_CHAR = "\x00"
 @dataclass
 class MatchCandidate:
     """A single candidate match found in the source document."""
+
     text: str
     score: float
-    start_index: int   # absolute position, in the SOURCE DOCUMENT, of the
-                        # actual matched substring (including padding)
-    end_index: int      # absolute end position of the actual matched substring
+    # start_index and end_index are absolute positions, in the SOURCE
+    # DOCUMENT, of the actual matched substring (including padding).
+    start_index: int
+    end_index: int
 
 
 @dataclass
@@ -170,12 +172,15 @@ class QuoteMatchResult:
                              was attempted, because it was too short to be
                              unambiguous even in principle
     """
+
     status: str
     candidates: list[MatchCandidate]
     claimed_quote: str
 
 
-def _find_top_candidates(quote: str, document: str, max_candidates: int = 3) -> list[MatchCandidate]:
+def _find_top_candidates(
+    quote: str, document: str, max_candidates: int = 3
+) -> list[MatchCandidate]:
     """
     Find up to `max_candidates` distinct, non-overlapping matches for
     `quote` within `document`, ranked by score.
@@ -197,19 +202,21 @@ def _find_top_candidates(quote: str, document: str, max_candidates: int = 3) -> 
         padded_start = max(0, alignment.dest_start - PAD_CHARS)
         padded_end = min(len(document), alignment.dest_end + PAD_CHARS)
 
-        candidates.append(MatchCandidate(
-            text=document[padded_start:padded_end],
-            score=alignment.score,
-            start_index=padded_start,
-            end_index=padded_end,
-        ))
+        candidates.append(
+            MatchCandidate(
+                text=document[padded_start:padded_end],
+                score=alignment.score,
+                start_index=padded_start,
+                end_index=padded_end,
+            )
+        )
 
         # Mask out the matched region (not the padding) so the next
         # search call is forced to find a DIFFERENT location.
         working_doc = (
-            working_doc[:alignment.dest_start]
+            working_doc[: alignment.dest_start]
             + _MASK_CHAR * (alignment.dest_end - alignment.dest_start)
-            + working_doc[alignment.dest_end:]
+            + working_doc[alignment.dest_end :]
         )
 
     return candidates
@@ -231,7 +238,9 @@ def match_quote(quote: str, document: str) -> QuoteMatchResult:
         original claimed quote (for traceability in the verification tag).
     """
     if len(quote.strip()) < MINIMUM_QUOTE_LENGTH_CHARS:
-        return QuoteMatchResult(status="quote_too_short", candidates=[], claimed_quote=quote)
+        return QuoteMatchResult(
+            status="quote_too_short", candidates=[], claimed_quote=quote
+        )
 
     top_candidates = _find_top_candidates(quote, document)
 
@@ -239,20 +248,30 @@ def match_quote(quote: str, document: str) -> QuoteMatchResult:
         return QuoteMatchResult(status="no_match", candidates=[], claimed_quote=quote)
 
     if top_candidates[0].score < 50.0:
-        return QuoteMatchResult(status="no_match", candidates=top_candidates, claimed_quote=quote)
+        return QuoteMatchResult(
+            status="no_match", candidates=top_candidates, claimed_quote=quote
+        )
 
     if len(top_candidates) == 1:
         if top_candidates[0].score < MINIMUM_SCORE_FOR_UNIQUE:
-            return QuoteMatchResult(status="no_match", candidates=top_candidates, claimed_quote=quote)
+            return QuoteMatchResult(
+                status="no_match", candidates=top_candidates, claimed_quote=quote
+            )
         status = "unique"
     else:
         gap = top_candidates[0].score - top_candidates[1].score
         if top_candidates[0].score < MINIMUM_SCORE_FOR_UNIQUE:
-            return QuoteMatchResult(status="no_match", candidates=top_candidates, claimed_quote=quote)
+            return QuoteMatchResult(
+                status="no_match", candidates=top_candidates, claimed_quote=quote
+            )
         status = "unique" if gap >= AMBIGUITY_GAP_THRESHOLD else "ambiguous"
 
     if status == "unique":
-        if not _extract_numeric_tokens(quote).issubset(_extract_numeric_tokens(top_candidates[0].text)):
+        if not _extract_numeric_tokens(quote).issubset(
+            _extract_numeric_tokens(top_candidates[0].text)
+        ):
             status = "numeric_mismatch"
 
-    return QuoteMatchResult(status=status, candidates=top_candidates, claimed_quote=quote)
+    return QuoteMatchResult(
+        status=status, candidates=top_candidates, claimed_quote=quote
+    )

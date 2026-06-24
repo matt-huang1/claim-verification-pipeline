@@ -8,11 +8,6 @@ counterexample, not a generic case, so a future regression on any one
 of these specific failure modes will be caught.
 """
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from quote_match import match_quote
 
 
@@ -171,7 +166,7 @@ def test_real_match_spans_are_recoverable_for_auditing():
     result = match_quote(quote, document)
     assert result.status == "unique"
     c = result.candidates[0]
-    assert document[c.start_index:c.end_index] == c.text
+    assert document[c.start_index : c.end_index] == c.text
 
 
 def test_hallucinated_number_is_caught_as_numeric_mismatch():
@@ -185,10 +180,14 @@ def test_hallucinated_number_is_caught_as_numeric_mismatch():
     the matched span.
     """
     document = "TSMC announced moving its target for 100 percent renewable energy consumption forward to 2040 from 2050, according to the company."
-    hallucinated_quote = "moving its target for 100 percent renewable energy consumption forward to 2035"
+    hallucinated_quote = (
+        "moving its target for 100 percent renewable energy consumption forward to 2035"
+    )
     result = match_quote(hallucinated_quote, document)
     assert result.status == "numeric_mismatch"
 
-    true_quote = "moving its target for 100 percent renewable energy consumption forward to 2040"
+    true_quote = (
+        "moving its target for 100 percent renewable energy consumption forward to 2040"
+    )
     result2 = match_quote(true_quote, document)
     assert result2.status == "unique"

@@ -7,11 +7,6 @@ substring containment. If someone "simplifies" the implementation later,
 these tests should fail loudly.
 """
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from domain_check import check_domain
 
 

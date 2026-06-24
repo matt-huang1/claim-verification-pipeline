@@ -42,6 +42,20 @@ Two company assessments have been independently rebuilt from primary sources to 
 
 Further companies (Patagonia, TotalEnergies, Cheniere, Coal India, Vestas, Microsoft) are an identified backlog, each chosen to test a specific structural gap (e.g. a single entity with two opposed climate signatures; a same-product-opposite-use contradiction), not added yet, to avoid building extensive ground truth before the system that uses it exists.
 
+## Development
+
+```bash
+python -m pytest tests/ -v                          # run the test suite
+python -m black --check --line-length=88 src/ tests/  # formatting check
+python -m flake8 src/ tests/                         # lint
+```
+
+Formatting is owned by **black** (line length 88, configured in `pyproject.toml`). Linting is **flake8**, configured in `.flake8` (stock flake8 does not read `pyproject.toml`, so the config lives in its own file rather than being silently ignored).
+
+`.flake8` sets `extend-ignore = E501, E203, W503` — the standard combination when running black and flake8 together. black already enforces line length on everything it can safely reformat, but it deliberately does not rewrap comments or string literals; E501 would otherwise flag design-reasoning comments and test-fixture strings that black cannot fix and that are not worth mangling by hand. E203 and W503 are ignored because black's formatting intentionally conflicts with them.
+
+Test files import from `src/` via `tests/conftest.py`, which puts `src/` on the path once for all tests — so individual test files import their module directly at the top, with no per-file path manipulation.
+
 ## Status
 
 Early. One vertical slice built and tested. Full pipeline (RAG retrieval, Bucket B/C/D handling, the human-judgment layer, the facts-and-figures dashboard) not yet built.
