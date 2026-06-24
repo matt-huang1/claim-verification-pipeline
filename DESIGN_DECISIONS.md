@@ -1,0 +1,115 @@
+# Design Decision Record
+
+Personal reference. This is not the README — it's the thing to re-read before an interview to remember *why* each decision was made, including the approaches that were tried and rejected. The README tells a stranger what the system does. This tells me what I'd need to defend, unprompted, about any single line.
+
+The core thesis behind every decision in this document: **a check only counts if it would have given a different answer in the world where the claim was false.** A check that says "looks fine" regardless of truth is not a check, it's theater. This is called **non-discriminating verification** throughout, and it's the thing every fix below was correcting for.
+
+---
+
+## Origin: the failure that started this
+
+I produced a TSMC climate transition assessment using AI-assisted research. I verified it by re-asking the same model "are you sure" multiple times in one session. That is not independent verification — the second and third pass have no new information and no different reasoning process from the first. The actual error that slipped through: an IIGCC NZIF 2.0 bucket label, "climate solutions bucket," that does not exist in the framework's five real alignment tiers. It went out in a real document before being caught — caught only by going back to the actual primary source document myself.
+
+That's the founding case for everything below. Re-asking a model is not verification. Going to the primary source is.
+
+---
+
+## domain_check.py — "is this URL actually who it claims to be"
+
+**What it does:** checks a claimed source URL's domain against an allowlist of known-legitimate domains for a company. Deliberately knows nothing about companies, claims, or buckets — generic on purpose, so the same function works regardless of what's being checked.
+
+**Why domain check exists at all, and why it doesn't cross-reference third parties:** for a company's own self-announcement (a press release), the company's own domain is the authoritative source by definition. A third party reporting on the announcement doesn't make the announcement more true — it's not a Bucket C "multiple sources, reconcile definitions" situation. Checking three news sites about whether TSMC put out a press release would have been the *exact* re-asking-the-same-question-differently mistake from the origin story.
+
+**The real bug, and why it mattered:** the first version extracted the domain using `urlparse(url).netloc`. `netloc` includes the port and any embedded login credentials, not just the hostname. Adversarial review (Gemini) found a working exploit: `https://evil.com:.tsmc.com/fake-news` produces a `netloc` of `"evil.com:.tsmc.com"`, which *ends with* `.tsmc.com` and would pass the allowlist check, even though the real host is `evil.com`. **Confirmed by actually running the exploit against the real function, not by trusting the explanation** — this distinction matters because a second review (ChatGPT) reported finding *no* bypass on the same code, and was wrong. It tested substring spoofing thoroughly (`tsmc.com.evil.com`, `nottsmc.com`, etc.) but never tried corrupting the URL parser itself via a malformed port, a different attack surface entirely. If I'd only run one review and it had been that one, I'd have shipped a function with a live exploit while holding a report saying it was safe.
+
+**Fix:** switched to `urlparse(url).hostname`, which strips ports and credentials before comparison. Verified the exploit URL now correctly fails and resolves to `evil.com`, not `tsmc.com`.
+
+**Why `endswith(".tsmc.com")` and not `startswith` or plain substring check:** this is the mechanism that defeats `tsmc.com.evil.com` — a domain that contains the real name as a *prefix*. `"tsmc.com.evil.com".startswith("tsmc.com")` is `True` (would wrongly pass). `"tsmc.com.evil.com".endswith(".tsmc.com")` is `False` (correctly fails), because the real domain must be the *suffix*, not merely present somewhere in the string. Tested both directions before settling on `endswith`.
+
+**Things I'd defend if asked "why didn't you just use a real library for this":** there are dedicated domain-validation libraries (`tldextract`, etc.) that handle edge cases like public suffix lists more robustly than hand-rolled string logic. I didn't reach for one because the actual requirement here is narrow (compare against a small, explicit allowlist of known company domains, not parse arbitrary internet domains correctly), and a dependency adds a thing to trust and maintain for a problem this constrained. Worth revisiting if the allowlist grows to handle truly adversarial/international domains at scale.
+
+---
+
+## quote_match.py — "does this quote actually appear in this document"
+
+**What it does:** fuzzy-matches a claimed quote against a source document's text, returns the top distinct candidates with scores, and an explicit status (`unique`, `ambiguous`, `no_match`, `numeric_mismatch`, `quote_too_short`) rather than silently picking the best match.
+
+**Core design decision — never silently resolve ambiguity:** if a claimed quote could plausibly refer to more than one place in a document (e.g. a bare "2040" in a document mentioning several years), a single best-match pick hides that ambiguity. The function always surfaces multiple candidates and makes the system *say* when it's unsure, rather than picking confidently and being wrong.
+
+**The ambiguity signal is a GAP, not an absolute score:** uniqueness is determined by how much better the #1 candidate scores than the #2 candidate (`AMBIGUITY_GAP_THRESHOLD = 10.0`), not by the #1 score alone. This was deliberate from early on: a quote could score moderately well against one passage with nothing else nearby competing, producing a "high confidence" reading that's actually just "nothing else was tried against it."
+
+### Design history — four attempts on the deduplication problem, in order, because the order is the actual lesson
+
+**Attempt 1 — hand-rolled sliding window, deduplicate candidates by position distance** (`abs(start_a - start_b) >= len(quote)`). This is a *proxy* for "are these the same real match," not the real thing. Adversarial review (Gemini) found a confirmed **self-collision bug**: a single, perfectly isolated, unambiguous quote got split into two "different" candidates that both scored 100.0, because two overlapping sliding windows (one padded before the match, one padded after) cleared the position-distance threshold despite covering the exact same real text. Reproduced directly before attempting any fix.
+
+**Attempt 2 — deduplicate by whole-window text similarity instead of position.** Tested directly rather than assumed: did NOT fix self-collision (differently-padded windows don't look similar as whole strings, because the padding differs), AND made a second, already-known problem *worse* — it silently merged two genuinely different claims ("net zero by 2040" and "net zero by 2050" sitting close together) into one candidate, hiding the conflict instead of surfacing it.
+
+**Attempt 3 — keep the sliding window, but recover the actual matched span via `fuzz.partial_ratio_alignment` and deduplicate by real span overlap**, not a proxy. This correctly fixed both Attempt 1 problems (verified: self-collision now collapses to one candidate at the true span; the close-claims case correctly stays as two non-overlapping candidates with the real conflicting years visible). But verifying it against the *real* TSMC press release text surfaced a separate bug: the fixed window size could truncate a genuine multi-number match before reaching all the numbers, depending on exactly where an embedded newline (or even just different indentation in an otherwise near-identical test string) fell relative to the window boundaries. Tried tuning `window_slack` (20/40/60/80) and step density — **results were not monotonic with slack** (some intermediate values scored *worse* than smaller ones), and a combination that fixed one exact test string did not generalize to a near-identical one. This is the moment that mattered most: I had a real, working fix for two real bugs, and it still wasn't right, and no amount of constant-tuning was going to make it right.
+
+**Attempt 4 (final) — stop hand-rolling windows entirely.** Call `fuzz.partial_ratio_alignment` ONCE directly on the full document. This is what the library is actually built to do — find the best-aligned substring without a window size ever being guessed in advance. To get multiple distinct candidates (needed for ambiguity detection), mask out each found match with a sentinel character and search again — this guarantees no overlap **by construction**, removing the need for a separate dedup function at all. A small fixed padding (`PAD_CHARS = 15`) around each recovered span exists because the alignment is bounded to the quote's own length and can clip a trailing token by a few characters — this is *not* a reintroduction of window-size guessing, because the match position itself is already correctly found; the padding is just a safety margin around a position already known to be right.
+
+**The lesson, stated plainly, because this is the one I'd most want to land in an interview:** the fix for "this approach needs more tuning" was not a better tuning, it was removing the thing that needed tuning. Three attempts of fixing symptoms; the fourth attempt asked whether the underlying mechanism (manual windowing) was the wrong tool, and it was. Net result was *less* code, not more, and every prior fix was preserved.
+
+### The numeric token gate — the single most important fix in the whole project
+
+**The bug:** character-level fuzzy similarity (`fuzz.partial_ratio`) cannot tell a correct quote from one where the single most load-bearing token — a year, a percentage — has been changed. A claimed year of "2035" that appears **nowhere** in a document that actually says "2040" still scored 97%+ similarity (only one character differs out of ~80) and was flagged `unique`. Worse: the returned candidate text was truncated right at the point of divergence, so even a human glancing at the result wouldn't see the discrepancy. This is non-discriminating verification, demonstrated *inside the verification tool itself* — the exact failure mode the whole project exists to catch, found in my own code.
+
+**The fix:** a second, fully separate, exact-match check. Extract every numeric token (years, percentages, dollar figures — via a regex, `_extract_numeric_tokens`) from the claimed quote, and require every one of them to literally appear in the matched span (set subset comparison, not fuzzy similarity) before a result can be `unique`. If not, the status becomes `numeric_mismatch` — a distinct, named status, not folded into `no_match`, because it's a more specific and more dangerous failure (the quote is *mostly* right, except for the one thing that makes it a claim at all).
+
+**Stated scope limit, deliberately not overclaimed:** this only catches hallucinations where the wrong token is numeric. "The board REJECTED the proposal" vs. a source saying "APPROVED" would still pass — neither word is a number. That's a real, separate, harder problem (semantic/antonym detection) that wasn't attempted, and the docstring says so explicitly rather than implying broader coverage than exists.
+
+**A bug found *while building* the numeric gate:** the regex was initially capturing trailing sentence punctuation as part of the number (`"2050."` instead of `"2050"`), causing a real, correct quote to fail the gate because of a period. Fixed by requiring a decimal point be followed by digits, not just present.
+
+---
+
+## tag_schema.py — "what does 'verified' actually mean, and who's allowed to say it"
+
+**What it does:** `ClaimTag` — one record per claim, bundling the results of every check that ran against it, with `overall_status` computed from the attached evidence rather than settable directly.
+
+**Why one tag per claim, not one tag per check (the design decision that mattered most here):** if `domain_check` and `quote_match` produced separate, free-floating tags, a reviewer could read the quote-match tag alone, see `unique, 100.0`, and stop — never realizing domain legitimacy was never checked, or had failed. **Proven concretely, not just argued:** built a tag with a failing domain check (`tsmc.com.evil.com`) paired with a textually perfect quote match (`status=unique, score=100.0`). Correctly returns `overall_status="source_illegitimate"`, not `"verified"`. A one-tag-per-check design would have gotten this exact case wrong.
+
+**Why typed evidence dataclasses, not a generic dict:** a generic dict could be built with the wrong evidence shape in the wrong slot (a domain-check-shaped dict stored where quote-match evidence belongs) and nothing would catch it until something tried to read a missing field. Explicit dataclasses make this impossible at construction time — enforced by the type system, not convention.
+
+**Why `overall_status` is a computed `@property`, not a plain field:** if it were settable, it could be set to `"verified"` by mistake, by a future bug, or by someone taking a shortcut under time pressure, without the underlying checks having actually passed. Making it read-only and recomputed every access makes that specific failure mode structurally impossible. Tested directly: `tag.overall_status = "verified"` raises `AttributeError`.
+
+**The Bucket C labeling bug, found by a reviewer reading the code closely (not running it):** the first version returned `"verified"` for Bucket C once source definitions were reconciled. This was wrong, and inconsistent with how I'd *already* handled Bucket D in the same function. Bucket C has no single authoritative source to check against by definition — that's the entire reason it's Bucket C and not Bucket A. Reusing "verified" flattened exactly the distinction Bucket D's `"assumptions_explicit"` label exists to preserve, for the identical structural reason. Fixed: Bucket C's terminal success state is `"disambiguated"`. **Worth remembering:** this is the same failure mode the whole project exists to catch (a confident label not actually earned by what it claims), found this time by a reviewer reading carefully rather than by adversarial execution — both modes of review caught real things tonight, for different bug classes.
+
+---
+
+## pipeline.py — wiring, deliberately kept thin
+
+**The three-function split, and why function 3 isn't just convenience:**
+- `run_bucket_a_checks(...)` — calls the two real checks, returns raw results. The only function that touches real checks.
+- `build_bucket_a_tag(...)` — wraps raw results into typed evidence, builds the `ClaimTag`. Testable instantly with hand-built fake inputs, no real checks needed (mirrors exactly how `tag_schema.py`'s own tests were built).
+- `verify_bucket_a_claim(...)` — thin wrapper calling 1 then 2. **Why this exists despite 1 and 2 doing the real work:** it's the "recipe," not "extra flexibility" — the actual flexibility comes from 1 and 2 already being separate. The recipe exists because the common real-world task (verify one claim, get one tag) deserves a one-call shape, while the techniques underneath stay separately testable and reusable for whatever Bucket B/C/D pipelines eventually need a different combination of steps.
+
+**Keystone end-to-end test:** a real quote match (unique, perfect score) paired with a spoofed domain → `overall_status == "source_illegitimate"`. Proves the refusal happens at the *composed* pipeline level, not just inside isolated units.
+
+---
+
+## extraction.py — the one place a real model gets called, and why everything else stays untouched
+
+**Scope boundary, decided explicitly before writing any code:** this is the only module that calls a real LLM. `domain_check`, `quote_match`, `tag_schema`, `pipeline` are all fully deterministic and untouched by this layer — by design, so the expensive, non-deterministic, costly part of the system is isolated to one file, and everything that verifies its output is free, instant, and trustworthy independent of which model produced the candidate.
+
+**Why the function signature is `(claim_text, document, allowlist)`, not `claim_text` alone:** the document and allowlist are caller-supplied independent ground truth. If the model itself were allowed to choose them, a hallucinated source would validate itself — the model both makes the claim and grades its own homework. This is the same non-discriminating-verification principle as everywhere else, applied to the boundary between the AI layer and the verification layer specifically.
+
+**The pre-check gate, and why it's deliberately incomplete:** before any paid API call, reject claims that contain no numeric token AND no word from a small explicit list (`first`, `only`, `world's`, `largest`, `smallest`). Walked through, and rejected, two more ambitious versions of this:
+- A plain "company name mentioned" check fails immediately — "TSMC is doing well on sustainability" trivially contains a company name and is exactly as unverifiable as it sounds.
+- A broader vagueness classifier (e.g. an LLM judging "is this claim vague") was rejected on the same grounds the LLM-as-judge idea was rejected generally: it would just be asking a model for its opinion about a fact, which has no real discriminating power.
+The actual signal that survived scrutiny: "first" is a single falsifiable historical fact (TSMC either was first or wasn't); "one of the best" is an unfalsifiable opinion using similar-sounding vocabulary. The gate catches the clear case cheaply and accepts that some genuinely vague claims will slip through and get caught later when quote-match fails to find anything — a stated, intentional tradeoff, not a gap I missed.
+
+**Retry-stopping logic, and why it isn't exponential backoff:** considered backoff (delay growing between retries) because I'd seen it used elsewhere. Rejected it on inspection: backoff exists to give an *overloaded service* time to recover. My retries aren't triggered by the API being down — they're triggered by the *content* being wrong (an ambiguous quote, a wrong number). Waiting longer between attempts doesn't make a wrong quote less wrong. The actual rule: stop early if two consecutive attempts share the same status AND the quote-match score hasn't meaningfully improved (delta < 5.0, a stated starting assumption, same epistemic status as `AMBIGUITY_GAP_THRESHOLD`) — repetition without measurable progress is itself the signal to stop, not a fixed try-count. Hard cap of 3 regardless, as a backstop.
+
+**`unverifiable_after_retries` — why it's not a relabeling of the claim's bucket:** initially considered "switch to Bucket C" if repeated extraction attempts failed on a claim. Rejected this immediately on reflection — failing to *find* a source for a Bucket A claim doesn't make the claim definitionally fuzzy; it's still a single-source, deterministically-checkable claim, the search just didn't succeed. The honest conclusion is "this claim could not be substantiated after genuine attempts," which is itself useful, actionable information (the claim might be wrong; it might need a human to search by hand) — not a reason to relabel what kind of claim it structurally is.
+
+**Why the return value exposes `last_attempt_status` (a string) and not the raw `ClaimTag` object — a fix made after the fact, worth remembering as its own lesson:** the first version returned the last attempt's full `ClaimTag` under `final_tag`. The problem: `final_tag.overall_status` would show a plain single-attempt status (e.g. `"ambiguous"`) with no indication this was attempt 3 of 3 after retries were exhausted — exactly the confusion the wrapper status was built to prevent, just one property-access away. The fix wasn't "rename the field and add a warning comment" (still leaves the misleading property reachable for anyone who skips the docstring) — it was removing the object from the return value entirely, since the full per-attempt evidence already lives in the structured log. This is the same principle as `overall_status` being a property instead of a field: don't trust a future reader to remember a convention, make the wrong usage structurally unreachable.
+
+**Why every attempt gets logged, not just the outcome:** the explicit purpose, stated in the module docstring, is to let a human independently judge whether a *status* was actually correct later, not just trust the system's own verdict about its own failure — applying the project's central principle one level up, to the system's self-reporting about itself.
+
+---
+
+## Things to remember about the *process*, not just the code
+
+- **Two independent adversarial reviews consistently outperformed one.** Across three review rounds on `quote_match.py` alone, different reviewers found genuinely different, non-overlapping bugs, and at least one review (on the domain check) was simply wrong about there being no exploit. Confidence in a review's reasoning is not evidence; running the claimed counterexample is.
+- **A documented "we decided not to fix this" limitation got resolved later, not by trying harder at the same approach, but by realizing the earlier fixes were proxies for something specific** (real span overlap), and building the real thing. The right response to "I can't fix this" is sometimes "come back once I understand what I was actually approximating."
+- **I made the project's own central mistake at least twice while building the tool meant to prevent it** — once in `quote_match.py` (the numeric gate bug) and once in `tag_schema.py` (the Bucket C label). Both were caught by the same discipline (external, adversarial review) applied to my own work, not just to AI-generated climate claims. That symmetry is the actual proof the principle works, not a embarrassing footnote.
