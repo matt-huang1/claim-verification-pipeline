@@ -23,15 +23,19 @@ Claims in a transition-enabler assessment fall into different categories dependi
 
 A system that applies the same kind of check to all four buckets will either over-verify cheap facts or under-verify genuine judgment calls. This project treats bucket classification as a precondition for choosing a verification strategy, not an afterthought.
 
-## What's built so far
+## What's built: a complete Bucket A vertical slice, AI-to-verified-tag
 
-This repo currently contains one fully-specified, fully-tested **vertical slice**: a single Bucket A claim (TSMC's 2023 commitment to accelerate its renewable energy target to 2040) traced end-to-end through:
+The repo now contains a fully-specified, fully-tested, end-to-end pipeline for Bucket A claims, from a plain-English claim to a verified record, with no untrusted step in between:
 
 1. **Domain legitimacy check** (`src/domain_check.py`) — does the claimed source URL actually belong to the company, checked against an allowlist, not a third-party cross-reference (a self-announcement doesn't need corroboration; it needs confirmation it came from the right place).
-2. **Quote match check** (`src/quote_match.py`) — does the AI-extracted quote actually appear in the source document, found via fuzzy string matching, returning the top 3 candidate matches with similarity scores rather than a single silent pick.
-3. **Verification tag** (`src/tag_schema.py`) — a record of *what was actually checked and what the result was*, not just which bucket a claim belongs to. A tag that only says "Bucket A, deterministic" without recording the actual pass/fail result and match score would itself be a non-discriminating check wearing a more official-looking label.
+2. **Quote match check** (`src/quote_match.py`) — does the claimed quote actually appear in the source document. Uses fuzzy matching for tolerance to formatting noise, but layers a separate, exact **numeric token gate** on top: every number, year, or percentage in the claim must literally appear in the matched text, because fuzzy similarity alone cannot distinguish a correct quote from one where the AI changed the one number that mattered.
+3. **Verification tag** (`src/tag_schema.py`) — a record of *what was actually checked and what the result was*. A claim is never "verified" from one check alone — a perfect quote match paired with a spoofed source still correctly fails, because the tag bundles both checks together and the failing one overrides.
+4. **Pipeline** (`src/pipeline.py`) — wires the checks together: run the checks, build the tag from the results, or do both in one call. Built as separable steps specifically so the wiring logic can be tested with fake inputs, without needing real checks to run every time.
+5. **Extraction layer** (`src/extraction.py`) — the only module that calls a real LLM (OpenAI). Proposes a candidate source URL and quote for a claim, runs it through the deterministic pipeline above, and retries with specific feedback if it fails — stopping early once retries stop making measurable progress, not after a fixed delay. A cheap, deliberately incomplete pre-check rejects claims with no checkable content (no number, no exclusivity/ranking word) before any paid call is made. Every attempt, successful or not, is logged to `logs/extraction.jsonl` so failures can be audited by a human rather than trusted on the system's own say-so.
 
-Both checks are deliberately generic: they know nothing about TSMC, climate frameworks, or what a "claim" means semantically. They take a URL/allowlist or a quote/document, and return a result. All company- and bucket-specific logic lives in the orchestration layer (`src/pipeline.py`), not in the checks themselves, so the same checks can eventually evaluate claims about any company, for any framework.
+Every check below the extraction layer is deliberately generic: `domain_check` and `quote_match` know nothing about TSMC, climate frameworks, or what a "claim" means semantically. They take a URL/allowlist or a quote/document and return a result. All company- and bucket-specific logic lives in the orchestration layer, not in the checks themselves, so the same checks can eventually evaluate claims about any company, for any framework.
+
+See `DESIGN_DECISIONS.md` for the full reasoning behind each module, including the approaches that were tried and rejected, and the real bugs found via adversarial review (a working domain-spoofing exploit, a hallucinated-number gate, and others).
 
 ## Ground truth
 
@@ -42,24 +46,23 @@ Two company assessments have been independently rebuilt from primary sources to 
 
 Further companies (Patagonia, TotalEnergies, Cheniere, Coal India, Vestas, Microsoft) are an identified backlog, each chosen to test a specific structural gap (e.g. a single entity with two opposed climate signatures; a same-product-opposite-use contradiction), not added yet, to avoid building extensive ground truth before the system that uses it exists.
 
-## Development
-
-```bash
-python -m pytest tests/ -v                          # run the test suite
-python -m black --check --line-length=88 src/ tests/  # formatting check
-python -m flake8 src/ tests/                         # lint
-```
-
-Formatting is owned by **black** (line length 88, configured in `pyproject.toml`). Linting is **flake8**, configured in `.flake8` (stock flake8 does not read `pyproject.toml`, so the config lives in its own file rather than being silently ignored).
-
-`.flake8` sets `extend-ignore = E501, E203, W503` — the standard combination when running black and flake8 together. black already enforces line length on everything it can safely reformat, but it deliberately does not rewrap comments or string literals; E501 would otherwise flag design-reasoning comments and test-fixture strings that black cannot fix and that are not worth mangling by hand. E203 and W503 are ignored because black's formatting intentionally conflicts with them.
-
-Test files import from `src/` via `tests/conftest.py`, which puts `src/` on the path once for all tests — so individual test files import their module directly at the top, with no per-file path manipulation.
-
 ## Status
 
-Early. One vertical slice built and tested. Full pipeline (RAG retrieval, Bucket B/C/D handling, the human-judgment layer, the facts-and-figures dashboard) not yet built.
+The Bucket A vertical slice is complete and hardened: domain check, quote match, tag schema, pipeline wiring, and the AI extraction layer all built, tested, and verified against real adversarial cases (including a confirmed domain-spoofing exploit and a confirmed hallucinated-number bypass, both fixed). Buckets B, C, and D are designed in principle (see the table above and `tag_schema.py`'s evidence types) but not yet implemented — that's the natural next piece of depth. Breadth (more ground-truth companies) is an explicit, deliberate backlog, not a current priority.
 
 ## Stack
 
-Python for verification logic (string matching, deterministic checks — the right tool for this specific job). TypeScript may be introduced later for a dashboard/UI layer if one is built, on the same principle: use each tool where it actually fits, rather than picking one language and forcing everything through it.
+Python for verification logic (string matching, deterministic checks — the right tool for this specific job) and the one LLM call in `extraction.py` (OpenAI API). TypeScript may be introduced later for a dashboard/UI layer if one is built, on the same principle: use each tool where it actually fits, rather than picking one language and forcing everything through it.
+
+## Development
+
+```
+pip install -r requirements.txt
+cp .env.example .env                 # add your own OPENAI_API_KEY
+python -m pytest tests/ -v           # run all tests (the one live-API test is skipped by default)
+RUN_LIVE_API=1 python -m pytest tests/test_extraction.py -v -m live_api  # run the real API test deliberately
+python -m black --check src/ tests/  # check formatting (line length 88)
+python -m flake8 src/ tests/         # lint (config in .flake8)
+```
+
+black owns code line length; flake8 is configured to ignore E501/E203/W503 (the standard combination when using both together), since black does not rewrap comments or string literals.
