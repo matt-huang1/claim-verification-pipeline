@@ -28,6 +28,7 @@ deterministic test suite is for.
 """
 
 import os
+from unittest.mock import patch
 
 import pytest
 
@@ -55,13 +56,21 @@ TSMC_TRUE_QUOTE = (
 )
 
 # Fake search results used by all loop tests that need search to succeed so the
-# LLM call can proceed. The URL just needs to be on the allowlist domain.
+# LLM call can proceed. Includes both URLs proposed by fake LLMs in the existing
+# loop tests (https://tsmc.com/news for the failure-path tests, and
+# https://pr.tsmc.com/english/news/3067 for the verified-path tests), so those
+# tests still pass the url_compare enforcement check added to the loop.
 _FAKE_SEARCH_RESULTS = [
     {
         "url": "https://pr.tsmc.com/english/news/3067",
         "title": "TSMC Accelerates RE100 Timetable",
         "snippet": "TSMC moves 100% renewable energy target to 2040 from 2050.",
-    }
+    },
+    {
+        "url": "https://tsmc.com/news",
+        "title": "TSMC News",
+        "snippet": "Latest news and announcements from TSMC.",
+    },
 ]
 
 
@@ -394,6 +403,69 @@ def test_no_search_results_feedback_is_set_for_next_attempt(tmp_path):
     assert len(feedbacks_received) == 1
     # It received the no-search-results feedback from attempt 1
     assert feedbacks_received[0] == _NO_SEARCH_RESULTS_FEEDBACK
+
+
+# --- URL-in-results enforcement -------------------------------------------
+
+
+def test_loop_rejects_url_not_from_search_results(tmp_path):
+    """
+    A URL that is on the allowlist but was NOT in the search results provided
+    to that attempt must fail immediately as "url_not_from_search_results",
+    and verify_bucket_a_claim must never be called. This is the deterministic
+    enforcement of the "select from candidates" rule that the prompt instruction
+    alone cannot provide.
+
+    The two consecutive url_not_from_search_results attempts (both score=None)
+    trigger the no-progress early stop at attempt 2, not the hard cap of 3.
+    """
+
+    def offlist_llm(claim_text, feedback, search_results):
+        # tsmc.com is on the allowlist, but this path is not in _FAKE_SEARCH_RESULTS
+        return {"url": "https://tsmc.com/invented-page", "quote": TSMC_TRUE_QUOTE}
+
+    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+        result = extract_claim_evidence(
+            "TSMC moved its renewable target to 2040",
+            document=TSMC_DOCUMENT,
+            allowlist=TSMC_ALLOWLIST,
+            llm_fn=offlist_llm,
+            search_fn=_always_finds,
+            log_dir=str(tmp_path),
+        )
+
+    mock_verify.assert_not_called()
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["attempts"] == 2
+    assert result["last_attempt_status"] == "url_not_from_search_results"
+
+
+def test_loop_accepts_url_with_trivial_formatting_difference(tmp_path):
+    """
+    A URL differing from a search result only by a trailing slash is treated
+    as matching — the formatting difference is normalized away by same_url().
+    The attempt proceeds to verification normally (not rejected as
+    url_not_from_search_results).
+    """
+
+    def trailing_slash_llm(claim_text, feedback, search_results):
+        # Add trailing slash to the first search result URL
+        return {
+            "url": _FAKE_SEARCH_RESULTS[0]["url"] + "/",
+            "quote": TSMC_TRUE_QUOTE,
+        }
+
+    result = extract_claim_evidence(
+        "TSMC accelerated its 100% renewable target to 2040",
+        document=TSMC_DOCUMENT,
+        allowlist=TSMC_ALLOWLIST,
+        llm_fn=trailing_slash_llm,
+        search_fn=_always_finds,
+        log_dir=str(tmp_path),
+    )
+    # Normalized URL matched → proceeded to verification → verified
+    assert result["status"] == "verified"
+    assert result["last_attempt_status"] != "url_not_from_search_results"
 
 
 # --- the single live test (opt-in, costs money) ---------------------------

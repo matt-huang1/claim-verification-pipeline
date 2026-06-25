@@ -92,6 +92,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from pipeline import verify_bucket_a_claim
+from url_compare import same_url
 from web_search import search_for_source
 
 load_dotenv()
@@ -209,6 +210,11 @@ def _build_feedback(status: str) -> str:
         )
     if status == "quote_too_short":
         return "the quote was too short to verify - provide a longer exact quote"
+    if status == "url_not_from_search_results":
+        return (
+            "the URL you proposed was not one of the search results provided - "
+            "you must select a URL exactly from the candidates list provided"
+        )
     return "verification failed - provide a different source URL and exact quote"
 
 
@@ -369,6 +375,29 @@ def extract_claim_evidence(
 
         proposal = llm_fn(claim_text, feedback, search_results)
         url, quote = proposal["url"], proposal["quote"]
+
+        # Enforce that the proposed URL actually came from the search results.
+        # Prompt instructions alone are unverified trust; this is the
+        # deterministic check. same_url() tolerates trivial formatting
+        # differences (http/https, www., trailing slash) so a model that
+        # returns a URL verbatim from the candidates list always passes.
+        if not any(same_url(url, r["url"]) for r in search_results):
+            record = AttemptRecord(
+                attempt=attempt,
+                url=url,
+                quote=quote,
+                status="url_not_from_search_results",
+                top_score=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            _log_attempt(record, claim_text, log_dir)
+            history.append(record)
+
+            if len(history) >= 2 and no_meaningful_progress(history[-2], history[-1]):
+                break
+
+            feedback = _build_feedback("url_not_from_search_results")
+            continue
 
         tag = verify_bucket_a_claim(
             claim_id=claim_id,
