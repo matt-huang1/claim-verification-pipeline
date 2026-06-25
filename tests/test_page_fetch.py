@@ -273,6 +273,57 @@ def test_pdf_over_html_cap_but_under_pdf_cap_passes():
     assert result["failure_reason"] is None
 
 
+# --- download_error vs parse_error ---
+
+
+def test_download_error_when_response_content_raises():
+    """
+    A connection drop after headers arrive but before the full body is
+    received raises inside response.content. This must return
+    failure_reason="download_error", distinct from parse_error (body
+    arrived but extraction failed). Uses a _TrackedResponse subclass
+    to make .content raise a ConnectionError.
+    """
+
+    class _DroppingResponse(MagicMock):
+        @property
+        def content(self):
+            raise requests.exceptions.ConnectionError("connection dropped mid-stream")
+
+    mock_resp = _DroppingResponse()
+    mock_resp.status_code = 200
+    mock_resp.headers = {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Length": "1024",
+    }
+    with patch("requests.get", return_value=mock_resp):
+        result = fetch_page_text("https://tsmc.com/press")
+    assert result["success"] is False
+    assert result["failure_reason"] == "download_error"
+
+
+def test_parse_error_when_extraction_raises_after_successful_download():
+    """
+    Body downloads successfully (response.content returns bytes) but
+    PdfReader raises during extraction. Must return failure_reason=
+    "parse_error", not "download_error" — the body arrived, only the
+    parsing step failed.
+    """
+    fake_pdf_bytes = b"%PDF-1.4 corrupted"
+    mock_resp = _mock_response(
+        content_type="application/pdf",
+        content_length=len(fake_pdf_bytes),
+        body=fake_pdf_bytes,
+    )
+    with patch("requests.get", return_value=mock_resp):
+        with patch(
+            "page_fetch.PdfReader", side_effect=Exception("malformed PDF stream")
+        ):
+            result = fetch_page_text("https://tsmc.com/corrupted.pdf")
+    assert result["success"] is False
+    assert result["failure_reason"] == "parse_error"
+
+
 # --- unsupported content type ---
 
 

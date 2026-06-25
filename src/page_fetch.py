@@ -180,7 +180,10 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
         "unsupported_content_type" — content type is not html or pdf
         "size_unknown"             — Content-Length header absent
         "too_large"                — Content-Length exceeds the type cap
-        "parse_error"              — body downloaded but could not be parsed
+        "download_error"           — body failed mid-download (connection drop
+                                     after headers arrived but before full body)
+        "parse_error"              — body downloaded but extraction failed
+                                     (malformed PDF, decode failure, etc.)
     """
 
     def _fail(reason: str, content_type: str | None = None) -> dict:
@@ -228,6 +231,10 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
 
     try:
         body = response.content
+    except Exception:
+        return _fail("download_error", content_type=raw_ct)
+
+    try:
         text = _html_to_text(body) if ct_class == "html" else _pdf_to_text(body)
     except Exception:
         return _fail("parse_error", content_type=raw_ct)
