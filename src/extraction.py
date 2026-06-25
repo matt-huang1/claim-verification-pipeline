@@ -2,8 +2,8 @@
 extraction.py
 
 The AI extraction layer - the ONLY place in this project that calls a real
-LLM. It asks a model to propose a candidate source URL and supporting quote
-for a claim (the "agent's self-report"), then runs that proposal through
+LLM. It asks a model to select the best candidate source URL from real web
+search results and propose a supporting quote, then runs that proposal through
 the existing, fully-deterministic pipeline (pipeline.verify_bucket_a_claim)
 to check whether the self-report actually holds up.
 
@@ -14,28 +14,50 @@ enters, and it is deliberately thin.
 
 INDEPENDENT GROUND TRUTH - why the LLM does not see the document:
 
-The model is given ONLY the claim text (plus failure feedback on retries).
-It proposes {url, quote} from its own knowledge. The source `document` and
-the legitimacy `allowlist` are supplied by the CALLER, not the model, and
-the proposal is checked against them. This is the whole point: if the
-document or allowlist came from the model, a hallucinated source would
-validate itself - exactly the non-discriminating-verification failure this
-project exists to prevent. The model's self-report is only ever checked
-against ground truth it did not get to choose.
+The model is given the claim text and real search-result candidates (URLs
++ snippets). The source `document` and the legitimacy `allowlist` are
+supplied by the CALLER, not the model, and the proposal is checked against
+them. This is the whole point: if the document or allowlist came from the
+model, a hallucinated source would validate itself - exactly the
+non-discriminating-verification failure this project exists to prevent. The
+model's selection is only ever checked against ground truth it did not get
+to choose.
 
 (Note: this is why the public function takes `document` and `allowlist` in
 addition to `claim_text`, rather than `claim_text` alone - verification is
 meaningless without independent ground truth to verify against.)
 
+SEARCH LAYER - why the model receives real URLs, not a blank prompt:
+
+An earlier design asked the model to propose a source URL purely from its
+training data. A live run showed this reliably produces plausible-but-
+nonexistent URLs (URLs that look real but return 404 or belong to unrelated
+content). Web search was added as the fix: before each LLM call, the
+pipeline runs a Brave Search query against the claim text and passes the
+real, verified-to-exist candidate URLs to the model. The model then selects
+the best candidate from those URLs rather than generating one from memory.
+
+If search returns no results, the attempt fails immediately with status
+"no_search_results" and the LLM is NOT called. This is a firm, permanent
+rule - not a soft default that can be revisited per-attempt. Falling back to
+model memory whenever search is empty would create a standing escape hatch
+that defeats the reason search was added: a model that knows the fallback
+exists will learn that unverified URLs are always available as a backstop.
+The "no_search_results" failure counts toward both the hard cap and the
+no-progress early-stop rule - an empty-search-results loop is just as much
+"no progress" as a repeated identical quote-match failure. See web_search.py
+for the choice of Brave Search over OpenAI's bundled search options.
+
 PRE-CHECK GATE - cost control before any API call:
 
-Before calling the LLM at all, a cheap deterministic check rejects claims
-that are too vague to verify (no numeric token, no exclusivity/ranking
-word). This gate is DELIBERATELY INCOMPLETE: the exclusivity word list is
-short and known not to be exhaustive. Some genuinely vague claims will pass
-the gate and only get caught later when quote_match finds nothing - that is
-an accepted tradeoff, not a bug. The gate's only job is to cheaply catch
-the clearest unverifiable claims before spending API budget on them.
+Before calling the LLM or running a search, a cheap deterministic check
+rejects claims that are too vague to verify (no numeric token, no
+exclusivity/ranking word). This gate is DELIBERATELY INCOMPLETE: the
+exclusivity word list is short and known not to be exhaustive. Some
+genuinely vague claims will pass the gate and only get caught later when
+quote_match finds nothing - that is an accepted tradeoff, not a bug. The
+gate's only job is to cheaply catch the clearest unverifiable claims before
+spending any API budget on them.
 
 RETRY STOPPING - why "no progress", not a backoff delay:
 
@@ -57,7 +79,8 @@ independently check whether a status was actually correct rather than
 trusting the system's own verdict about its own failure - the same "don't
 trust a confident result without the evidence to check it" principle the
 rest of this project is built on. Log entries reuse the exact status
-vocabulary tag_schema.py already defines; no parallel vocabulary.
+vocabulary tag_schema.py already defines; "no_search_results" is added here
+for the search-failure case that has no tag_schema equivalent.
 """
 
 import json
@@ -69,6 +92,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from pipeline import verify_bucket_a_claim
+from web_search import search_for_source
 
 load_dotenv()
 
@@ -99,6 +123,13 @@ _EXCLUSIVITY_PATTERN = re.compile(
     r"\b(" + "|".join(re.escape(w) for w in _EXCLUSIVITY_WORDS) + r")\b"
 )
 
+# Feedback message used when a search attempt finds no results. Defined as a
+# constant so the exact string can be asserted in tests.
+_NO_SEARCH_RESULTS_FEEDBACK = (
+    "no search results were found for this claim - this may indicate "
+    "the claim is too obscure or not well-formed"
+)
+
 
 @dataclass
 class AttemptRecord:
@@ -107,7 +138,11 @@ class AttemptRecord:
     attempt: int
     url: str
     quote: str
-    status: str  # reuses tag_schema's overall_status vocabulary
+    # Reuses tag_schema's overall_status vocabulary for verified/failed
+    # verification attempts. "no_search_results" is specific to this module:
+    # it represents an attempt where search returned nothing and the LLM was
+    # not called at all, so there was no ClaimTag to draw a status from.
+    status: str
     top_score: float | None
     timestamp: str
 
@@ -177,29 +212,41 @@ def _build_feedback(status: str) -> str:
     return "verification failed - provide a different source URL and exact quote"
 
 
-def _default_llm_call(claim_text: str, feedback: str | None) -> dict:
+def _default_llm_call(
+    claim_text: str, feedback: str | None, search_results: list[dict]
+) -> dict:
     """
-    The real LLM call. Asks for a source URL and an exact supporting quote,
-    as a JSON object. This is the only function here that touches the API;
-    tests inject a fake in its place via the `llm_fn` parameter.
+    The real LLM call. Presents real search candidates to the model and asks
+    it to select the best matching URL and propose a verbatim supporting quote.
+    This is the only function here that touches the OpenAI API; tests inject
+    a fake in its place via the `llm_fn` parameter.
     """
     from openai import OpenAI
 
     client = OpenAI()
 
-    system = (
-        "You help verify factual claims. Given a claim, propose a single "
-        "primary source that supports it. Respond with ONLY a JSON object "
-        'with exactly two string fields: "url" (the source URL) and '
-        '"quote" (a short, exact, verbatim quotation from that source that '
-        "supports the claim, including any specific numbers or dates). Do "
-        "not paraphrase the quote."
+    candidates_text = "\n".join(
+        f"{i + 1}. URL: {r['url']}\n   Title: {r['title']}\n   Snippet: {r['snippet']}"
+        for i, r in enumerate(search_results)
     )
-    user = f"Claim: {claim_text}"
+
+    system = (
+        "You help verify factual claims. Given a claim and a list of candidate "
+        "source URLs found by a web search, select the single best matching "
+        "source and propose a verbatim supporting quote from it. Respond with "
+        'ONLY a JSON object with exactly two string fields: "url" (the URL of '
+        "your chosen source, selected from the provided candidates) and "
+        '"quote" (a short, exact, verbatim quotation from that source that '
+        "supports the claim, including any specific numbers or dates). Do not "
+        "paraphrase the quote. Only use URLs from the provided candidates list."
+    )
+    user = (
+        f"Claim: {claim_text}\n\nCandidate sources from web search:\n{candidates_text}"
+    )
     if feedback:
         user += (
             f"\n\nThe previous attempt failed because {feedback}. "
-            "Provide a corrected url and quote."
+            "Select a different source or propose a more precise quote."
         )
 
     response = client.chat.completions.create(
@@ -238,6 +285,7 @@ def extract_claim_evidence(
     *,
     claim_id: str = "claim",
     llm_fn=None,
+    search_fn=None,
     log_dir: str = "logs",
     max_attempts: int = MAX_ATTEMPTS,
 ) -> dict:
@@ -248,10 +296,20 @@ def extract_claim_evidence(
     self-report is checked against (see module docstring) - they are NOT
     shown to the model.
 
+    `llm_fn`, if provided, replaces the real OpenAI call. Signature:
+        (claim_text: str, feedback: str | None, search_results: list[dict]) -> dict
+    returning {"url": str, "quote": str}.
+
+    `search_fn`, if provided, replaces the real Brave Search call. Signature:
+        (query: str) -> list[dict]
+    returning [{"url": str, "title": str, "snippet": str}, ...].
+    Both parameters exist so the full loop can be tested end-to-end with no
+    real API calls.
+
     Returns a dict:
         {
             "claim_text": str,
-            "status": str,   # see below
+            "status": str,               # see below
             "attempts": int,
             "last_attempt_status": str | None,
         }
@@ -264,15 +322,12 @@ def extract_claim_evidence(
                                        A distinct, named state - NOT folded
                                        into any single-attempt failure status.
 
-    last_attempt_status is the literal value of the last attempt's
-    ClaimTag.overall_status (e.g. "ambiguous", "numeric_mismatch"), or None
-    if no attempt was made (too_vague_to_verify). It is a plain string, NOT
-    the ClaimTag object: returning the object would let a caller read a
-    single-attempt status with no indication it was the last of several
-    exhausted retries - the very confusion status="unverifiable_after_retries"
-    exists to prevent. The full per-attempt evidence (scores, matched text,
-    domain results) is already in the structured JSON-lines log, so the
-    return value duplicating it buys nothing.
+    last_attempt_status is the literal status string of the last attempt
+    (e.g. "ambiguous", "numeric_mismatch", "no_search_results"), or None if
+    no attempt was made (too_vague_to_verify). It is a plain string, NOT a
+    ClaimTag object: returning the object would let a caller read a single-
+    attempt status with no indication it was the last of several exhausted
+    retries. The full per-attempt evidence is in the structured JSON-lines log.
     """
     if not is_verifiable_claim(claim_text):
         return {
@@ -283,12 +338,36 @@ def extract_claim_evidence(
         }
 
     llm_fn = llm_fn or _default_llm_call
+    search_fn = search_fn or search_for_source
 
     history: list[AttemptRecord] = []
     feedback: str | None = None
 
     for attempt in range(1, max_attempts + 1):
-        proposal = llm_fn(claim_text, feedback)
+        search_results = search_fn(claim_text)
+
+        if not search_results:
+            # No LLM call when search returns nothing. This is a firm rule:
+            # falling back to model memory would defeat the reason search was
+            # added. See module docstring, "SEARCH LAYER".
+            record = AttemptRecord(
+                attempt=attempt,
+                url="",
+                quote="",
+                status="no_search_results",
+                top_score=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            _log_attempt(record, claim_text, log_dir)
+            history.append(record)
+
+            if len(history) >= 2 and no_meaningful_progress(history[-2], history[-1]):
+                break
+
+            feedback = _NO_SEARCH_RESULTS_FEEDBACK
+            continue
+
+        proposal = llm_fn(claim_text, feedback, search_results)
         url, quote = proposal["url"], proposal["quote"]
 
         tag = verify_bucket_a_claim(
