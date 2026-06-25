@@ -3,9 +3,10 @@ extraction.py
 
 The AI extraction layer - the ONLY place in this project that calls a real
 LLM. It asks a model to select the best candidate source URL from real web
-search results and propose a supporting quote, then runs that proposal through
-the existing, fully-deterministic pipeline (pipeline.verify_bucket_a_claim)
-to check whether the self-report actually holds up.
+search results and propose a supporting quote, then fetches that URL's content
+and runs the proposal through the existing, fully-deterministic pipeline
+(pipeline.verify_bucket_a_claim) to check whether the self-report actually
+holds up.
 
 Everything downstream of this file - domain_check, quote_match, tag_schema,
 pipeline - stays exactly as built: no model, no randomness, fully testable
@@ -15,17 +16,20 @@ enters, and it is deliberately thin.
 INDEPENDENT GROUND TRUTH - why the LLM does not see the document:
 
 The model is given the claim text and real search-result candidates (URLs
-+ snippets). The source `document` and the legitimacy `allowlist` are
-supplied by the CALLER, not the model, and the proposal is checked against
-them. This is the whole point: if the document or allowlist came from the
-model, a hallucinated source would validate itself - exactly the
-non-discriminating-verification failure this project exists to prevent. The
-model's selection is only ever checked against ground truth it did not get
-to choose.
++ snippets). The source document is fetched live from the URL the model
+selects - it is not supplied by the caller or by the model. The legitimacy
+`allowlist` is supplied by the caller and checked against the model's URL
+proposal. This is the whole point: the document content comes from the
+actual URL, not from a caller-supplied string, and the allowlist is
+verified independently of the model's proposal. A hallucinated source
+cannot validate itself - exactly the non-discriminating-verification
+failure this project exists to prevent.
 
-(Note: this is why the public function takes `document` and `allowlist` in
-addition to `claim_text`, rather than `claim_text` alone - verification is
-meaningless without independent ground truth to verify against.)
+(Note: this is why the public function takes `allowlist` in addition to
+`claim_text`, rather than `claim_text` alone - the allowlist is the
+independent ground truth that the model's URL proposal is checked against.
+The document itself is now fetched live, not caller-supplied, which closes
+the gap where a test fixture could stand in for real page content.)
 
 SEARCH LAYER - why the model receives real URLs, not a blank prompt:
 
@@ -48,6 +52,20 @@ no-progress early-stop rule - an empty-search-results loop is just as much
 "no progress" as a repeated identical quote-match failure. See web_search.py
 for the choice of Brave Search over OpenAI's bundled search options.
 
+FETCH LAYER - why the document is fetched live, not caller-supplied:
+
+After the model selects a URL (confirmed to be from the search results via
+url_compare.same_url), that URL is fetched live via page_fetch.fetch_page_text.
+The fetched text becomes the document that quote_match checks the proposed
+quote against. This closes the last gap in the pipeline: previously,
+extraction.py accepted `document` as a caller-supplied parameter, which
+meant the document content in tests was a hardcoded fixture rather than the
+real page at the model's proposed URL. Now, whether in tests or in a live
+run, the verification always runs against actual fetched content. Test
+isolation is preserved by injecting a fake `fetch_fn` (same pattern as
+`llm_fn` and `search_fn`) so unit tests can control the returned text without
+making real HTTP calls.
+
 PRE-CHECK GATE - cost control before any API call:
 
 Before calling the LLM or running a search, a cheap deterministic check
@@ -62,25 +80,29 @@ spending any API budget on them.
 RETRY STOPPING - why "no progress", not a backoff delay:
 
 Retries stop on a hard cap of 3 attempts, OR early if two consecutive
-attempts produce the same status without the quote-match score meaningfully
-improving. The failure mode being managed here is WRONG CONTENT (a
-hallucinated quote, a bad URL), not an overloaded or rate-limited API - so
-exponential backoff does not apply. Waiting longer does not make a
-non-existent source exist. Repeated retries that aren't measurably moving
-toward "verified" are a signal that the claim may not be backed by a
-findable source at all, and continuing just burns API cost.
+attempts share the same stage_reached and the same status without the
+quote-match score meaningfully improving. Reaching a later pipeline stage
+(e.g. advancing from fetch_failed to verification_completed) always counts
+as progress even if the later stage then fails. The failure mode being
+managed here is WRONG CONTENT (a hallucinated quote, a bad URL), not an
+overloaded or rate-limited API - so exponential backoff does not apply.
+Waiting longer does not make a non-existent source exist. Repeated retries
+that aren't measurably moving toward "verified" are a signal that the claim
+may not be backed by a findable source at all, and continuing just burns
+API cost.
 
 STRUCTURED LOG - so a human can audit failures, not just trust the verdict:
 
 Every attempt (not only the final outcome) is appended to a JSON-lines log
-in logs/. The purpose is to let a human review failures later and spot
-patterns (a certain kind of claim failing the same way), and to
-independently check whether a status was actually correct rather than
-trusting the system's own verdict about its own failure - the same "don't
-trust a confident result without the evidence to check it" principle the
-rest of this project is built on. Log entries reuse the exact status
-vocabulary tag_schema.py already defines; "no_search_results" is added here
-for the search-failure case that has no tag_schema equivalent.
+in logs/. Each log entry includes a stage_reached field indicating how far
+that attempt got ("no_search_results", "url_not_from_search_results",
+"fetch_failed", or "verification_completed"), so a human scanning the log
+can immediately see where each attempt stopped. The purpose is to let a
+human review failures later and spot patterns (a certain kind of claim
+failing the same way), and to independently check whether a status was
+actually correct rather than trusting the system's own verdict about its
+own failure - the same "don't trust a confident result without the evidence
+to check it" principle the rest of this project is built on.
 """
 
 import json
@@ -91,6 +113,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+from page_fetch import fetch_page_text
 from pipeline import verify_bucket_a_claim
 from url_compare import same_url
 from web_search import search_for_source
@@ -105,11 +128,11 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 # Hard ceiling on LLM calls per claim, regardless of anything else.
 MAX_ATTEMPTS = 3
 
-# Two consecutive same-status attempts whose top quote-match score improves
-# by less than this many points count as "no meaningful progress" and stop
-# the loop early. This threshold is a STARTING ASSUMPTION, not derived from
-# data - documented as such, like AMBIGUITY_GAP_THRESHOLD in quote_match.py.
-# Revisit against real logged runs once there are some.
+# Two consecutive same-stage, same-status attempts whose top quote-match score
+# improves by less than this many points count as "no meaningful progress" and
+# stop the loop early. This threshold is a STARTING ASSUMPTION, not derived
+# from data - documented as such, like AMBIGUITY_GAP_THRESHOLD in
+# quote_match.py. Revisit against real logged runs once there are some.
 NO_PROGRESS_SCORE_DELTA = 5.0
 
 # Numeric-token pattern, mirrored from quote_match._extract_numeric_tokens
@@ -139,12 +162,16 @@ class AttemptRecord:
     attempt: int
     url: str
     quote: str
-    # Reuses tag_schema's overall_status vocabulary for verified/failed
-    # verification attempts. "no_search_results" is specific to this module:
-    # it represents an attempt where search returned nothing and the LLM was
-    # not called at all, so there was no ClaimTag to draw a status from.
+    # Reuses tag_schema's overall_status vocabulary for verification_completed
+    # attempts. For earlier-stage failures the status holds the specific
+    # failure reason for that stage (e.g. "not_found" for a fetch_failed
+    # attempt), so a human reading the log knows exactly what failed.
     status: str
     top_score: float | None
+    # How far this attempt got through the pipeline before stopping.
+    # Possible values: "no_search_results", "url_not_from_search_results",
+    # "fetch_failed", "verification_completed".
+    stage_reached: str
     timestamp: str
 
 
@@ -169,12 +196,20 @@ def no_meaningful_progress(
     threshold: float = NO_PROGRESS_SCORE_DELTA,
 ) -> bool:
     """
-    True if `current` did not meaningfully improve on `previous`: same
-    status, and the top score rose by less than `threshold`. A None score
-    is treated as 0.0 for this comparison. Different statuses always count
-    as progress (the system is at least exploring a different failure),
-    so this returns False in that case.
+    True if `current` did not meaningfully improve on `previous`.
+
+    Different stage_reached always counts as progress: advancing further
+    through the pipeline (e.g. from fetch_failed to verification_completed)
+    is forward movement even if the later stage then fails. Only two
+    consecutive attempts stuck at the SAME stage with the same specific
+    reason and no score improvement count as no progress.
+
+    A None score is treated as 0.0 for comparison. Different statuses at
+    the same stage also count as progress (the system is exploring a
+    different failure within that stage).
     """
+    if previous.stage_reached != current.stage_reached:
+        return False
     if previous.status != current.status:
         return False
     prev_score = previous.top_score if previous.top_score is not None else 0.0
@@ -184,8 +219,9 @@ def no_meaningful_progress(
 
 def _build_feedback(status: str) -> str:
     """
-    Turn a specific failure status into corrective guidance for the next
-    LLM call, so a retry is informed rather than a blind re-roll.
+    Turn a specific verification failure status into corrective guidance for
+    the next LLM call. Only handles ClaimTag.overall_status values; fetch
+    failures use _build_fetch_feedback instead.
     """
     if status == "numeric_mismatch":
         return (
@@ -216,6 +252,43 @@ def _build_feedback(status: str) -> str:
             "you must select a URL exactly from the candidates list provided"
         )
     return "verification failed - provide a different source URL and exact quote"
+
+
+def _build_fetch_feedback(failure_reason: str) -> str:
+    """
+    Turn a page_fetch failure_reason into corrective guidance for the next
+    LLM call. Kept separate from _build_feedback, which handles only
+    ClaimTag.overall_status values from the verification stage.
+    """
+    if failure_reason == "not_found":
+        return (
+            "the URL returned a 404 Not Found - try a different URL "
+            "from the search results"
+        )
+    if failure_reason == "forbidden":
+        return (
+            "the URL returned 403 Forbidden - the page may require "
+            "authentication; try a different URL from the search results"
+        )
+    if failure_reason == "timeout":
+        return (
+            "the URL timed out before responding - try a different URL "
+            "from the search results"
+        )
+    if failure_reason in ("too_large", "size_unknown"):
+        return (
+            "the document could not be fetched due to size constraints - "
+            "try a different URL, preferably a specific page rather than "
+            "a large PDF"
+        )
+    if failure_reason == "unsupported_content_type":
+        return (
+            "the URL did not return a web page or PDF - try a different "
+            "URL from the search results"
+        )
+    return (
+        "the URL could not be fetched - try a different URL from the " "search results"
+    )
 
 
 def _default_llm_call(
@@ -278,6 +351,7 @@ def _log_attempt(record: AttemptRecord, claim_text: str, log_dir: str) -> None:
         "quote": record.quote,
         "status": record.status,
         "top_score": record.top_score,
+        "stage_reached": record.stage_reached,
     }
     path = os.path.join(log_dir, "extraction.jsonl")
     with open(path, "a", encoding="utf-8") as f:
@@ -286,31 +360,40 @@ def _log_attempt(record: AttemptRecord, claim_text: str, log_dir: str) -> None:
 
 def extract_claim_evidence(
     claim_text: str,
-    document: str,
     allowlist: list[str],
     *,
     claim_id: str = "claim",
     llm_fn=None,
     search_fn=None,
+    fetch_fn=None,
     log_dir: str = "logs",
     max_attempts: int = MAX_ATTEMPTS,
 ) -> dict:
     """
     Extract and verify a source URL + quote for `claim_text`.
 
-    `document` and `allowlist` are the independent ground truth the model's
-    self-report is checked against (see module docstring) - they are NOT
-    shown to the model.
+    `allowlist` is the independent ground truth the model's URL proposal is
+    checked against - it is NOT shown to the model. The document is fetched
+    live from whatever URL the model proposes (after it passes the search-
+    results check), so there is no caller-supplied document.
 
     `llm_fn`, if provided, replaces the real OpenAI call. Signature:
-        (claim_text: str, feedback: str | None, search_results: list[dict]) -> dict
+        (claim_text: str, feedback: str | None, search_results: list[dict])
+        -> dict
     returning {"url": str, "quote": str}.
 
     `search_fn`, if provided, replaces the real Brave Search call. Signature:
         (query: str) -> list[dict]
     returning [{"url": str, "title": str, "snippet": str}, ...].
-    Both parameters exist so the full loop can be tested end-to-end with no
-    real API calls.
+
+    `fetch_fn`, if provided, replaces the real page_fetch.fetch_page_text
+    call. Signature:
+        (url: str) -> dict
+    returning {"success": bool, "text": str|None, "content_type": str|None,
+               "failure_reason": str|None}.
+
+    All three parameters exist so the full loop can be tested end-to-end
+    with no real API or HTTP calls.
 
     Returns a dict:
         {
@@ -345,6 +428,7 @@ def extract_claim_evidence(
 
     llm_fn = llm_fn or _default_llm_call
     search_fn = search_fn or search_for_source
+    fetch_fn = fetch_fn or fetch_page_text
 
     history: list[AttemptRecord] = []
     feedback: str | None = None
@@ -361,6 +445,7 @@ def extract_claim_evidence(
                 url="",
                 quote="",
                 status="no_search_results",
+                stage_reached="no_search_results",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
@@ -387,6 +472,7 @@ def extract_claim_evidence(
                 url=url,
                 quote=quote,
                 status="url_not_from_search_results",
+                stage_reached="url_not_from_search_results",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
@@ -399,13 +485,34 @@ def extract_claim_evidence(
             feedback = _build_feedback("url_not_from_search_results")
             continue
 
+        fetch_result = fetch_fn(url)
+        if not fetch_result["success"]:
+            failure_reason = fetch_result["failure_reason"]
+            record = AttemptRecord(
+                attempt=attempt,
+                url=url,
+                quote=quote,
+                status=failure_reason,
+                stage_reached="fetch_failed",
+                top_score=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            _log_attempt(record, claim_text, log_dir)
+            history.append(record)
+
+            if len(history) >= 2 and no_meaningful_progress(history[-2], history[-1]):
+                break
+
+            feedback = _build_fetch_feedback(failure_reason)
+            continue
+
         tag = verify_bucket_a_claim(
             claim_id=claim_id,
             claim_text=claim_text,
             url=url,
             allowlist=allowlist,
             quote=quote,
-            document=document,
+            document=fetch_result["text"],
         )
 
         score = tag.quote_evidence.top_score if tag.quote_evidence else None
@@ -414,6 +521,7 @@ def extract_claim_evidence(
             url=url,
             quote=quote,
             status=tag.overall_status,
+            stage_reached="verification_completed",
             top_score=score,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )

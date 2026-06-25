@@ -1,65 +1,53 @@
 """
 Tests for extraction.py.
 
-Most tests here DO NOT call the real LLM or the real Brave Search API. Both
-sources of non-determinism and cost are quarantined into a single test
-(test_live_tsmc_extraction) marked `live_api` and skipped unless RUN_LIVE_API
-is set. Everything else is deterministic:
+All tests that exercise the retry loop inject fake llm_fn, search_fn, and
+fetch_fn so no real API or HTTP calls are made. The pre-check tests and
+stopping-rule tests are pure-Python with no injection needed.
 
-- The pre-check gate (is_verifiable_claim) is pure and tested directly.
-- The retry-stopping rule (no_meaningful_progress) is pure and tested with
-  hand-built AttemptRecords.
-- The full retry loop is tested with a FAKE llm_fn AND a FAKE search_fn
-  injected in place of the real calls, against the real TSMC document, so
-  the loop's stopping and status behavior is exercised end-to-end with zero
-  API cost.
-
-All fake llm_fn functions take three arguments: (claim_text, feedback,
-search_results). This matches the real signature after search was added to
-the loop. Fake search_fn functions return either a fixed list of fake
-results (to let the loop proceed to the LLM call) or an empty list (to
-exercise the no-search-results path).
-
-Why the live test is separated from all the others: it costs real money,
-needs network and valid API keys for both OpenAI and Brave Search, and its
-output is non-deterministic. Folding it into the normal suite would make
-`pytest` flaky, slow, and billable - the opposite of what a fast
-deterministic test suite is for.
+Test organisation:
+  - pre-check gate (is_verifiable_claim)
+  - stopping rule (no_meaningful_progress, pure)
+  - fetch feedback (direct tests of _build_fetch_feedback)
+  - full loop with fake LLM, fake search, fake fetch (no API cost)
+  - search integration (search empty → fail immediately, no LLM)
+  - URL-in-results enforcement (deterministic check via same_url)
+  - fetch integration (fetch fail → skip verification; mixed sequences)
+  - live API (opt-in, costs money)
 """
 
+import json
 import os
-from unittest.mock import patch
 
 import pytest
+from unittest.mock import MagicMock, patch
 
 from extraction import (
     AttemptRecord,
+    _NO_SEARCH_RESULTS_FEEDBACK,
+    _build_fetch_feedback,
+    extract_claim_evidence,
     is_verifiable_claim,
     no_meaningful_progress,
-    extract_claim_evidence,
-    _NO_SEARCH_RESULTS_FEEDBACK,
 )
 
-TSMC_DOCUMENT = """
-HSINCHU, Taiwan, R.O.C., Sep. 15, 2023 - To respond to climate change and
-mitigate climate impact, TSMC (TWSE: 2330, NYSE: TSM) today announced an
-acceleration of its RE100 sustainability timetable, moving its target for
-100 percent renewable energy consumption for all global operations
-forward to 2040 from 2050. TSMC also raised its 2030 target for
-company-wide renewable energy consumption to 60 percent from 40 percent.
-"""
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
 
-TSMC_ALLOWLIST = ["tsmc.com"]
+TSMC_DOCUMENT = (
+    "TSMC announced it is moving its target for 100 percent renewable energy "
+    "consumption for all global operations forward to 2040 from 2050, "
+    "accelerating its RE100 commitment by a full decade."
+)
+
+TSMC_ALLOWLIST = ["tsmc.com", "pr.tsmc.com"]
+
 TSMC_TRUE_QUOTE = (
-    "moving its target for 100 percent renewable energy consumption "
-    "for all global operations forward to 2040 from 2050"
+    "moving its target for 100 percent renewable energy consumption for all "
+    "global operations forward to 2040 from 2050"
 )
 
-# Fake search results used by all loop tests that need search to succeed so the
-# LLM call can proceed. Includes both URLs proposed by fake LLMs in the existing
-# loop tests (https://tsmc.com/news for the failure-path tests, and
-# https://pr.tsmc.com/english/news/3067 for the verified-path tests), so those
-# tests still pass the url_compare enforcement check added to the loop.
 _FAKE_SEARCH_RESULTS = [
     {
         "url": "https://pr.tsmc.com/english/news/3067",
@@ -69,22 +57,32 @@ _FAKE_SEARCH_RESULTS = [
     {
         "url": "https://tsmc.com/news",
         "title": "TSMC News",
-        "snippet": "Latest news and announcements from TSMC.",
+        "snippet": "Latest news from TSMC.",
     },
 ]
 
 
-def _always_finds(query: str) -> list[dict]:
+def _always_finds(query):
     return _FAKE_SEARCH_RESULTS
 
 
-def _record(attempt, status, score):
+def _fake_fetch(url: str) -> dict:
+    return {
+        "success": True,
+        "text": TSMC_DOCUMENT,
+        "content_type": "text/html",
+        "failure_reason": None,
+    }
+
+
+def _record(attempt, status, score, stage_reached="verification_completed"):
     return AttemptRecord(
         attempt=attempt,
         url="https://example.com",
         quote="q",
         status=status,
         top_score=score,
+        stage_reached=stage_reached,
         timestamp="2026-01-01T00:00:00+00:00",
     )
 
@@ -127,7 +125,6 @@ def test_vague_claim_is_rejected_without_calling_the_llm(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC cares deeply about the environment",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=exploding_llm,
         log_dir=str(tmp_path),
@@ -166,6 +163,43 @@ def test_none_scores_same_status_count_as_no_progress():
     assert no_meaningful_progress(prev, curr) is True
 
 
+def test_different_stage_reached_always_counts_as_progress():
+    """fetch_failed then verification_completed = progress regardless of status."""
+    prev = _record(1, "not_found", None, stage_reached="fetch_failed")
+    curr = _record(2, "ambiguous", None, stage_reached="verification_completed")
+    assert no_meaningful_progress(prev, curr) is False
+
+
+def test_same_stage_same_status_none_score_is_no_progress():
+    """Two fetch_failed / not_found in a row = no progress."""
+    prev = _record(1, "not_found", None, stage_reached="fetch_failed")
+    curr = _record(2, "not_found", None, stage_reached="fetch_failed")
+    assert no_meaningful_progress(prev, curr) is True
+
+
+# --- fetch feedback (direct) ----------------------------------------------
+
+
+def test_build_fetch_feedback_not_found():
+    msg = _build_fetch_feedback("not_found")
+    assert "404" in msg or "Not Found" in msg
+
+
+def test_build_fetch_feedback_forbidden():
+    msg = _build_fetch_feedback("forbidden")
+    assert "403" in msg or "authentication" in msg or "Forbidden" in msg
+
+
+def test_build_fetch_feedback_timeout():
+    msg = _build_fetch_feedback("timeout")
+    assert "timed out" in msg
+
+
+def test_build_fetch_feedback_unknown_reason_returns_catch_all():
+    msg = _build_fetch_feedback("some_future_reason")
+    assert "could not be fetched" in msg
+
+
 # --- full loop with fake LLM and fake search (no API cost) ----------------
 
 
@@ -178,10 +212,10 @@ def test_loop_verifies_on_first_attempt_with_good_proposal(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=good_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     assert result["status"] == "verified"
@@ -206,10 +240,10 @@ def test_loop_early_stops_on_two_no_progress_attempts(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=stuck_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     assert result["status"] == "unverifiable_after_retries"
@@ -250,10 +284,10 @@ def test_loop_runs_to_hard_cap_when_statuses_keep_changing(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=changing_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     assert result["status"] == "unverifiable_after_retries"
@@ -274,10 +308,10 @@ def test_loop_writes_one_log_line_per_attempt(tmp_path):
 
     extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=stuck_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     log_file = tmp_path / "extraction.jsonl"
@@ -307,7 +341,6 @@ def test_loop_skips_llm_when_search_returns_empty(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=exploding_llm,
         search_fn=lambda q: [],
@@ -326,7 +359,6 @@ def test_loop_logs_no_search_results_attempts(tmp_path):
     """
     extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=lambda c, f, s: (_ for _ in ()).throw(
             AssertionError("must not reach LLM")
@@ -355,10 +387,10 @@ def test_loop_passes_search_results_to_llm(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=capturing_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     assert result["status"] == "verified"
@@ -391,10 +423,10 @@ def test_no_search_results_feedback_is_set_for_next_attempt(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=capturing_llm,
         search_fn=search_succeeds_second_time,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     assert result["status"] == "verified"
@@ -427,7 +459,6 @@ def test_loop_rejects_url_not_from_search_results(tmp_path):
     with patch("extraction.verify_bucket_a_claim") as mock_verify:
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
-            document=TSMC_DOCUMENT,
             allowlist=TSMC_ALLOWLIST,
             llm_fn=offlist_llm,
             search_fn=_always_finds,
@@ -457,15 +488,110 @@ def test_loop_accepts_url_with_trivial_formatting_difference(tmp_path):
 
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         llm_fn=trailing_slash_llm,
         search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
     # Normalized URL matched → proceeded to verification → verified
     assert result["status"] == "verified"
     assert result["last_attempt_status"] != "url_not_from_search_results"
+
+
+# --- fetch integration ----------------------------------------------------
+
+
+def test_loop_stops_early_on_repeated_fetch_failure(tmp_path):
+    """
+    A fetch_fn that always returns failure causes the loop to stop early:
+    two consecutive fetch_failed / not_found attempts = no progress.
+    verify_bucket_a_claim is never reached.
+    """
+
+    def always_fails_fetch(url):
+        return {
+            "success": False,
+            "text": None,
+            "content_type": None,
+            "failure_reason": "not_found",
+        }
+
+    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+        result = extract_claim_evidence(
+            "TSMC moved its renewable target to 2040",
+            allowlist=TSMC_ALLOWLIST,
+            llm_fn=lambda c, f, s: {
+                "url": _FAKE_SEARCH_RESULTS[0]["url"],
+                "quote": TSMC_TRUE_QUOTE,
+            },
+            search_fn=_always_finds,
+            fetch_fn=always_fails_fetch,
+            log_dir=str(tmp_path),
+        )
+
+    mock_verify.assert_not_called()
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["attempts"] == 2  # early stop, not hard cap of 3
+    assert result["last_attempt_status"] == "not_found"
+
+
+def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
+    """
+    Attempt 1 fails at fetch (stage_reached='fetch_failed').
+    Attempt 2 fetch succeeds but verification fails (stage_reached='verification_completed').
+    Different stage_reached = progress, so the early-stop rule does NOT fire
+    after attempt 2. The loop exhausts max_attempts=2 normally.
+    The log shows the correct stage_reached for each attempt.
+    """
+    fetch_calls = [0]
+
+    def once_failing_fetch(url):
+        fetch_calls[0] += 1
+        if fetch_calls[0] == 1:
+            return {
+                "success": False,
+                "text": None,
+                "content_type": None,
+                "failure_reason": "not_found",
+            }
+        return {
+            "success": True,
+            "text": TSMC_DOCUMENT,
+            "content_type": "text/html",
+            "failure_reason": None,
+        }
+
+    mock_tag = MagicMock()
+    mock_tag.overall_status = "ambiguous"
+    mock_tag.quote_evidence = None
+
+    with patch("extraction.verify_bucket_a_claim", return_value=mock_tag):
+        result = extract_claim_evidence(
+            "TSMC moved its renewable target to 2040",
+            allowlist=TSMC_ALLOWLIST,
+            llm_fn=lambda c, f, s: {
+                "url": _FAKE_SEARCH_RESULTS[0]["url"],
+                "quote": TSMC_TRUE_QUOTE,
+            },
+            search_fn=_always_finds,
+            fetch_fn=once_failing_fetch,
+            max_attempts=2,
+            log_dir=str(tmp_path),
+        )
+
+    # Different stages → no early stop → loop ran to max_attempts=2
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["attempts"] == 2
+    assert result["last_attempt_status"] == "ambiguous"
+
+    # Verify stage_reached in log entries
+    log_file = tmp_path / "extraction.jsonl"
+    entries = [
+        json.loads(line) for line in log_file.read_text().splitlines() if line.strip()
+    ]
+    assert entries[0]["stage_reached"] == "fetch_failed"
+    assert entries[1]["stage_reached"] == "verification_completed"
 
 
 # --- the single live test (opt-in, costs money) ---------------------------
@@ -478,20 +604,17 @@ def test_loop_accepts_url_with_trivial_formatting_difference(tmp_path):
 )
 def test_live_tsmc_extraction(tmp_path):
     """
-    Calls both the real Brave Search API and the real OpenAI API.
-    Opt-in only (RUN_LIVE_API=1). Requires both OPENAI_API_KEY and
-    BRAVE_API_KEY to be set in the environment.
-
-    Non-deterministic: search results and model output both vary. Can
-    occasionally fail even when the code is correct — that is exactly why
-    this is isolated from the deterministic suite. Note that scope has
-    grown since the original version: this now exercises the full live
-    pipeline including real web search, not just a bare LLM call against
-    hardcoded document text.
+    Exercises the full real pipeline: real Brave Search API call, real OpenAI
+    API call, and a real HTTP fetch of whatever URL the model selects from
+    the search results. All three external calls cost money and are subject
+    to rate limits and availability. This test is non-deterministic: search
+    results, model output, and fetched page content all vary across runs. It
+    can occasionally fail even when the code is correct — that is exactly why
+    it is isolated from the deterministic suite with RUN_LIVE_API=1 opt-in.
+    Requires OPENAI_API_KEY and BRAVE_API_KEY in the environment.
     """
     result = extract_claim_evidence(
         "TSMC accelerated its target for 100 percent renewable energy to 2040",
-        document=TSMC_DOCUMENT,
         allowlist=TSMC_ALLOWLIST,
         log_dir=str(tmp_path),
     )
