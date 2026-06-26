@@ -16,6 +16,7 @@ Test organisation:
 
 from criterion_evidence import (
     NZIF_CRITERIA,
+    NZIF_CRITERION_TIERS,
     _CRITERION_NOT_FOUND_FEEDBACK,
     _MALFORMED_LLM_RESPONSE_FEEDBACK,
     find_criterion_evidence,
@@ -87,6 +88,21 @@ def test_nzif_criteria_text_matches_verified_primary_source_transcription():
         "emissions decline consistent with targets set to converge an "
         "asset with a net zero pathway."
     )
+
+
+# ---------------------------------------------------------------------------
+# NZIF_CRITERION_TIERS key-parity lock
+# ---------------------------------------------------------------------------
+
+
+def test_nzif_criterion_tiers_keys_match_nzif_criteria_keys_exactly():
+    """
+    NZIF_CRITERION_TIERS and NZIF_CRITERIA are two views of the same primary
+    source table — they must cover exactly the same set of criteria. This test
+    ensures they can never silently drift apart if one is edited without the
+    other.
+    """
+    assert set(NZIF_CRITERION_TIERS.keys()) == set(NZIF_CRITERIA.keys())
 
 
 # ---------------------------------------------------------------------------

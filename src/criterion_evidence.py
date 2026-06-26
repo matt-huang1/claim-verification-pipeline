@@ -96,16 +96,6 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 # assessment" table. User-transcribed on 2026-06-26. See module docstring for
 # the full "dated starting assumption" note.
 #
-# KNOWN SIMPLIFICATION — tier-mapping not yet represented:
-# In the source table, each criterion is tied to specific alignment tiers
-# (e.g. "ambition" applies to all four tiers; "emissions_performance" and
-# "decarbonisation_plan" only apply to "Aligned to a net zero pathway" and
-# "Achieving net zero"). This dict maps criterion_name -> criterion_text only.
-# The tier-mapping is real information from the primary source that this
-# structure does not yet capture. It is a known omission, not a silent one —
-# the design decision of how ClaimTag/CriterionEvidence should represent
-# "this criterion only matters for these specific tiers" should be made
-# explicitly before being built.
 NZIF_CRITERIA: dict[str, str] = {
     "ambition": (
         "A long term goal consistent with the global goal of achieving "
@@ -137,6 +127,62 @@ NZIF_CRITERIA: dict[str, str] = {
         "emissions decline consistent with targets set to converge an "
         "asset with a net zero pathway."
     ),
+}
+
+# Tier-applicability mapping, transcribed from the same IIGCC NZIF 2.0 primary
+# source table as NZIF_CRITERIA above ("Criteria underpinning alignment
+# assessment"). Maps criterion_name -> list of alignment tier slugs the
+# criterion is relevant to.
+#
+# Purpose: tells a human reviewer (or downstream logic) which alignment tiers a
+# given criterion actually applies to. For example, "decarbonisation_plan" only
+# appears for "Aligned to a net zero pathway" and "Achieving net zero" in the
+# real table — so a CriterionEvidence record for it should never be checked
+# against "Committed to aligning", which the framework never requires it for.
+#
+# This is a fact about the framework, not about any individual company's
+# evidence, so it lives here as a static module-level constant alongside
+# NZIF_CRITERIA for the same reason NZIF_CRITERIA itself doesn't vary per
+# claim. Tier name slugs are lowercase-with-underscores versions of the four
+# real NZIF alignment tier names:
+#   "Committed to aligning"         -> "committed_to_aligning"
+#   "Aligning to a net zero pathway"-> "aligning_to_a_net_zero_pathway"
+#   "Aligned to a net zero pathway" -> "aligned_to_a_net_zero_pathway"
+#   "Achieving net zero"            -> "achieving_net_zero"
+#
+# DATED STARTING ASSUMPTION: transcribed by the user on 2026-06-26 from the
+# same source as NZIF_CRITERIA. If IIGCC revises the framework, both dicts need
+# manual review together.
+NZIF_CRITERION_TIERS: dict[str, list[str]] = {
+    "ambition": [
+        "committed_to_aligning",
+        "aligning_to_a_net_zero_pathway",
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
+    "governance": [
+        "aligning_to_a_net_zero_pathway",
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
+    "disclosure": [
+        "aligning_to_a_net_zero_pathway",
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
+    "targets": [
+        "aligning_to_a_net_zero_pathway",
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
+    "decarbonisation_plan": [
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
+    "emissions_performance": [
+        "aligned_to_a_net_zero_pathway",
+        "achieving_net_zero",
+    ],
 }
 
 # Feedback constants for pre-quote-match failures.
