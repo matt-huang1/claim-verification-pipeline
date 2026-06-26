@@ -142,7 +142,22 @@ def run_bucket_b_pipeline(
     Run the full Bucket B evidence-gathering pipeline for `company_name`.
 
     For each criterion in `criteria` (defaults to all six NZIF criteria):
-      1. Build a search query from company_name + criterion_name.
+      1. Build a search query from company_name + the first clause of
+         criterion_text (text before the first "."). The original query used
+         company_name + criterion_name (e.g. "TSMC ambition"), which returned
+         zero Tavily results across every criterion tested in the first live run
+         — confirmed directly via raw Tavily API calls with the same parameters
+         web_search.py uses, ruling out a bug in web_search.py or Tavily itself.
+         Three alternatives were tested live before this one was chosen:
+           - Full criterion_text: worked for "ambition" (5 results) but risks
+             dilution on longer, more technical criteria text.
+           - Hand-written per-criterion phrases: worked but requires manual
+             tuning per criterion and does not scale.
+           - First clause of criterion_text (split on "."): returned 5 results
+             for all six real NZIF criteria in live Tavily calls, no exceptions.
+             Chosen because it is a generic, mechanical transformation — no
+             per-criterion hand-tuning, generalises automatically to any future
+             criterion added to NZIF_CRITERIA.
       2. Run a web search for candidate URLs.
       3. Call an LLM to select the best candidate URL for this criterion.
       4. Verify the selected URL came from the search results (url_compare).
@@ -194,7 +209,8 @@ def run_bucket_b_pipeline(
 
     for criterion_name in criteria:
         criterion_text = NZIF_CRITERIA[criterion_name]
-        query = f"{company_name} {criterion_name.replace('_', ' ')}"
+        first_clause = criterion_text.split(".")[0]
+        query = f"{company_name} {first_clause}"
 
         # --- search ---
         search_results = _search_fn(query)

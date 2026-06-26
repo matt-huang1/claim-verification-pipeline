@@ -343,6 +343,49 @@ def test_no_criteria_succeed_produces_incomplete_status():
 
 
 # ---------------------------------------------------------------------------
+# Search query construction regression
+# ---------------------------------------------------------------------------
+
+
+def test_search_query_uses_first_clause_of_criterion_text_not_criterion_name():
+    """
+    Regression: the original query used company_name + criterion_name (e.g.
+    "TSMC ambition"), which returned zero Tavily results for every criterion in
+    the first live run. The fix is company_name + first clause of criterion_text
+    (text before the first "."), confirmed to return 5 results for all six real
+    NZIF criteria in direct Tavily live tests.
+
+    This test asserts the EXACT query string passed to search_fn for each
+    criterion, so a future edit that reverts to the weak construction fails
+    here rather than silently reintroducing a bug only catchable by a live run.
+    """
+    recorded_queries: list[str] = []
+
+    def recording_search_fn(query):
+        recorded_queries.append(query)
+        return [{"url": FAKE_URL, "title": "T", "snippet": query}]
+
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-query-regression",
+        allowlist=TSMC_ALLOWLIST,
+        search_fn=recording_search_fn,
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+    )
+
+    assert len(recorded_queries) == len(NZIF_CRITERIA)
+    for criterion_name, criterion_text in NZIF_CRITERIA.items():
+        expected_first_clause = criterion_text.split(".")[0]
+        expected_query = f"TSMC {expected_first_clause}"
+        assert expected_query in recorded_queries, (
+            f"Query for '{criterion_name}' was not '{expected_query}'. "
+            f"Actual queries: {recorded_queries}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Live API test (opt-in)
 # ---------------------------------------------------------------------------
 
