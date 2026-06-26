@@ -9,12 +9,12 @@ rather than a settable field).
 """
 
 from tag_schema import (
+    AssumptionsStatedEvidence,
     ClaimTag,
+    CriterionEvidence,
     DomainCheckEvidence,
     QuoteMatchEvidence,
-    ReasoningCheckEvidence,
     SourcePluralityEvidence,
-    AssumptionsStatedEvidence,
 )
 
 
@@ -127,18 +127,40 @@ def test_ambiguous_quote_status_surfaces_specifically_not_generically():
     assert tag.overall_status == "ambiguous"
 
 
-def test_bucket_b_verified_requires_reasoning_evidence():
+def _sample_criterion_evidence(**kwargs):
+    defaults = dict(
+        criterion_name="decarbonisation_plan",
+        criterion_text=(
+            "The company has a documented decarbonisation plan covering "
+            "Scope 1 and 2 emissions with interim targets."
+        ),
+        evidence_text=(
+            "TSMC's Climate Action Plan outlines a roadmap to achieve "
+            "net-zero Scope 1 and 2 emissions by 2050 with a 2030 interim "
+            "reduction target of 28 percent."
+        ),
+        evidence_source_url="https://csr.tsmc.com/download/csr/2023_csr_en.pdf",
+        evidence_source_type="official",
+    )
+    defaults.update(kwargs)
+    return CriterionEvidence(**defaults)
+
+
+def test_bucket_b_with_criteria_evidence_returns_evidence_gathered():
+    """
+    With criteria evidence present, Bucket B returns "criteria_evidence_gathered"
+    — not "verified". The system collects evidence for human review; it never
+    decides whether criteria are met. This is the same structural distinction as
+    Bucket C's "disambiguated" and Bucket D's "assumptions_explicit".
+    """
     tag = ClaimTag(
         claim_id="c7",
-        claim_text="IIGCC bucket classification",
+        claim_text="TSMC has a documented decarbonisation plan",
         bucket="B",
-        reasoning_evidence=ReasoningCheckEvidence(
-            reasoning_shown=True,
-            framework_classification_checked=True,
-            notes="checked against real criteria table",
-        ),
+        criteria_evidence=[_sample_criterion_evidence()],
     )
-    assert tag.overall_status == "verified"
+    assert tag.overall_status == "criteria_evidence_gathered"
+    assert tag.overall_status != "verified"
 
 
 def test_bucket_b_incomplete_without_evidence():
@@ -146,23 +168,47 @@ def test_bucket_b_incomplete_without_evidence():
     assert tag.overall_status == "incomplete"
 
 
-def test_bucket_b_flags_when_classification_not_actually_checked():
+def test_bucket_b_multiple_criteria_all_captured():
     """
-    This is exactly the original TSMC failure: reasoning was shown, but
-    the technical framework label itself ("climate solutions bucket")
-    was never independently checked against the real NZIF document.
+    A single Bucket B claim can be checked against multiple NZIF criteria.
+    All are held in the list; overall_status reflects the collection state,
+    not a per-criterion verdict.
     """
     tag = ClaimTag(
         claim_id="c9",
-        claim_text="unchecked bucket label",
+        claim_text="TSMC aligns with NZIF transition plan criteria",
         bucket="B",
-        reasoning_evidence=ReasoningCheckEvidence(
-            reasoning_shown=True,
-            framework_classification_checked=False,
-            notes="label not verified against source",
-        ),
+        criteria_evidence=[
+            _sample_criterion_evidence(criterion_name="decarbonisation_plan"),
+            _sample_criterion_evidence(
+                criterion_name="disclosure",
+                criterion_text=(
+                    "The company publicly discloses its emissions data "
+                    "and transition plan in a standardised format."
+                ),
+                evidence_text=(
+                    "TSMC publishes annual GHG inventory data aligned with "
+                    "GHG Protocol in its CSR report."
+                ),
+            ),
+        ],
     )
-    assert tag.overall_status == "reasoning_not_fully_checked"
+    assert tag.overall_status == "criteria_evidence_gathered"
+    assert len(tag.criteria_evidence) == 2
+
+
+def test_bucket_b_distinguishes_official_and_third_party_source_type():
+    """
+    evidence_source_type is explicitly "official" or "third_party" — these
+    are never silently treated as equivalent. A company's own disclosure and
+    a third party's restatement of it are structurally different kinds of
+    evidence. This test confirms the field is present and holds the value set.
+    """
+    official = _sample_criterion_evidence(evidence_source_type="official")
+    third_party = _sample_criterion_evidence(evidence_source_type="third_party")
+    assert official.evidence_source_type == "official"
+    assert third_party.evidence_source_type == "third_party"
+    assert official.evidence_source_type != third_party.evidence_source_type
 
 
 def test_bucket_c_requires_definitions_reconciled():

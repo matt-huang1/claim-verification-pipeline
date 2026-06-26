@@ -93,19 +93,67 @@ class QuoteMatchEvidence:
 
 
 @dataclass(frozen=True)
-class ReasoningCheckEvidence:
+class CriterionEvidence:
     """
-    Placeholder for Bucket B verification: not "is this true" but "is the
-    reasoning shown, and is the underlying technical classification (e.g.
-    an NZIF alignment tier) correct against the actual framework
-    criteria." No upstream check populates this evidence type yet (the
-    Bucket B/C/D checks themselves are not built). The tag-layer logic
-    here is complete and tested.
+    Per-criterion evidence for Bucket B verification.
+
+    Bucket B claims are not "is this number right" (Bucket A) but "does this
+    company's disclosed practice actually satisfy this specific NZIF/TPI
+    criterion." Each instance of this class captures the evidence for ONE
+    criterion. A Bucket B ClaimTag holds a list of these (one per criterion
+    checked), stored in ClaimTag.criteria_evidence.
+
+    Fields:
+        criterion_name:      Short identifier for the NZIF criterion being
+                             checked (e.g. "decarbonisation_plan",
+                             "disclosure", "ambition", "targets"). Used as
+                             a key, not for display.
+        criterion_text:      The actual wording of this criterion from the
+                             real NZIF/TPI framework document — not
+                             paraphrased or recalled from memory. This is
+                             what a human reads to make the final call on
+                             whether the criterion is satisfied.
+        evidence_text:       The real source text found that is claimed to
+                             satisfy this criterion. Placed alongside
+                             criterion_text so a human can assess the match
+                             without further navigation.
+        evidence_source_url: The URL of the page or document where
+                             evidence_text was found.
+        evidence_source_type: "official" if the source is the company's own
+                             disclosure (annual report, press release, IR
+                             page); "third_party" if it is a secondary
+                             source (analyst report, news article, NGO
+                             database). Never silently treated as
+                             equivalent: a company's own claim and a third
+                             party's restatement of it are structurally
+                             different kinds of evidence.
+
+    Deliberately NO verdict field:
+
+    This dataclass has no "meets_criterion: bool" or equivalent. The system
+    collects and presents evidence; a human reads criterion_text and
+    evidence_text side by side and decides whether the criterion is met.
+    Automating that judgment would reintroduce exactly the non-discriminating
+    verification failure this project exists to prevent, relocated from the
+    original paragraph-level context into a per-criterion boolean.
+
+    Known, deferred limitation — textual evidence only:
+
+    This structure captures only textual evidence. Some companies present
+    criterion-relevant evidence primarily through charts or graphs (e.g. an
+    emissions-trajectory chart with no textual equivalent). This is the same
+    class of gap as page_fetch.py's deferred table/image extraction, and is
+    deliberately not solved now: no real company in this project's ground
+    truth has yet presented a criterion's evidence in a form with no textual
+    equivalent at all (TSMC's emissions trajectory exists in both chart and
+    text form). Revisit if a real case is found where it doesn't.
     """
 
-    reasoning_shown: bool
-    framework_classification_checked: bool
-    notes: str
+    criterion_name: str
+    criterion_text: str
+    evidence_text: str
+    evidence_source_url: str
+    evidence_source_type: str  # "official" | "third_party"
 
 
 @dataclass(frozen=True)
@@ -161,7 +209,7 @@ class ClaimTag:
 
     domain_evidence: DomainCheckEvidence | None = None
     quote_evidence: QuoteMatchEvidence | None = None
-    reasoning_evidence: ReasoningCheckEvidence | None = None
+    criteria_evidence: list[CriterionEvidence] | None = None
     source_plurality_evidence: SourcePluralityEvidence | None = None
     assumptions_evidence: AssumptionsStatedEvidence | None = None
 
@@ -189,14 +237,15 @@ class ClaimTag:
             return "verified"
 
         if self.bucket == "B":
-            if self.reasoning_evidence is None:
+            if not self.criteria_evidence:
                 return "incomplete"
-            if not (
-                self.reasoning_evidence.reasoning_shown
-                and self.reasoning_evidence.framework_classification_checked
-            ):
-                return "reasoning_not_fully_checked"
-            return "verified"
+            # No automated verdict: the system collects evidence, a human
+            # reads criterion_text alongside evidence_text and decides.
+            # "criteria_evidence_gathered" signals the evidence is ready for
+            # human review — parallel to Bucket C's "disambiguated" and
+            # Bucket D's "assumptions_explicit", which are also not "verified"
+            # in the Bucket A sense.
+            return "criteria_evidence_gathered"
 
         if self.bucket == "C":
             if self.source_plurality_evidence is None:
