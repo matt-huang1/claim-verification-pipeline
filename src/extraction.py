@@ -458,8 +458,39 @@ def extract_claim_evidence(
             feedback = _NO_SEARCH_RESULTS_FEEDBACK
             continue
 
-        proposal = llm_fn(claim_text, feedback, search_results)
-        url, quote = proposal["url"], proposal["quote"]
+        try:
+            proposal = llm_fn(claim_text, feedback, search_results)
+            url = proposal["url"]
+            quote = proposal["quote"]
+            if not isinstance(url, str) or not isinstance(quote, str):
+                raise ValueError("url and quote must both be strings")
+        except Exception:
+            # The LLM returned something unparseable or missing required fields.
+            # Convert to a named failure, not an uncaught crash. This has not
+            # fired in any live run so far (JSON mode has been reliable), but
+            # leaving it unhandled would crash the entire loop on first
+            # occurrence rather than treating it as a retryable attempt.
+            record = AttemptRecord(
+                attempt=attempt,
+                url="",
+                quote="",
+                status="malformed_llm_response",
+                stage_reached="malformed_llm_response",
+                top_score=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            _log_attempt(record, claim_text, log_dir)
+            history.append(record)
+
+            if len(history) >= 2 and no_meaningful_progress(history[-2], history[-1]):
+                break
+
+            feedback = (
+                "your previous response could not be parsed - respond with "
+                "ONLY a valid JSON object containing exactly the fields "
+                "'url' and 'quote'"
+            )
+            continue
 
         # Enforce that the proposed URL actually came from the search results.
         # Prompt instructions alone are unverified trust; this is the

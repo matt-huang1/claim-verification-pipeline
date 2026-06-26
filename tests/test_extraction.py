@@ -594,6 +594,109 @@ def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
     assert entries[1]["stage_reached"] == "verification_completed"
 
 
+# --- malformed LLM response handling -------------------------------------
+
+
+def test_malformed_llm_response_does_not_raise(tmp_path):
+    """
+    A mocked llm_fn that raises (simulating malformed JSON or a missing field)
+    must NOT propagate out of extract_claim_evidence. It must be caught and
+    recorded as "malformed_llm_response", treating the attempt as a named
+    failure rather than a crash.
+    """
+
+    def broken_llm(claim_text, feedback, search_results):
+        raise ValueError("invalid JSON returned by model")
+
+    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+        result = extract_claim_evidence(
+            "TSMC moved its renewable target to 2040",
+            allowlist=TSMC_ALLOWLIST,
+            llm_fn=broken_llm,
+            search_fn=_always_finds,
+            fetch_fn=_fake_fetch,
+            log_dir=str(tmp_path),
+        )
+
+    mock_verify.assert_not_called()
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["last_attempt_status"] == "malformed_llm_response"
+
+
+def test_malformed_llm_response_missing_url_field_does_not_raise(tmp_path):
+    """
+    A dict missing the 'url' key (valid JSON but wrong shape) must also be
+    caught as malformed_llm_response, not a KeyError crash.
+    """
+
+    def missing_url_llm(claim_text, feedback, search_results):
+        return {"quote": "some quote, but no url field"}
+
+    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+        result = extract_claim_evidence(
+            "TSMC moved its renewable target to 2040",
+            allowlist=TSMC_ALLOWLIST,
+            llm_fn=missing_url_llm,
+            search_fn=_always_finds,
+            fetch_fn=_fake_fetch,
+            log_dir=str(tmp_path),
+        )
+
+    mock_verify.assert_not_called()
+    assert result["last_attempt_status"] == "malformed_llm_response"
+
+
+def test_two_consecutive_malformed_llm_responses_trigger_early_stop(tmp_path):
+    """
+    Two consecutive malformed_llm_response attempts have the same stage_reached
+    and same status, so the no-progress early-stop fires at attempt 2, not the
+    hard cap of 3.
+    """
+
+    def always_broken_llm(claim_text, feedback, search_results):
+        raise ValueError("always broken")
+
+    result = extract_claim_evidence(
+        "TSMC moved its renewable target to 2040",
+        allowlist=TSMC_ALLOWLIST,
+        llm_fn=always_broken_llm,
+        search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
+        log_dir=str(tmp_path),
+    )
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["attempts"] == 2
+    assert result["last_attempt_status"] == "malformed_llm_response"
+
+
+def test_malformed_llm_response_then_good_response_counts_as_progress(tmp_path):
+    """
+    A malformed_llm_response attempt followed by a well-formed one that reaches
+    verification has different stage_reached values, so the no-progress rule
+    does NOT fire. Consistent with how fetch_failed→verification_completed
+    already counts as progress.
+    """
+    calls = [0]
+
+    def recovering_llm(claim_text, feedback, search_results):
+        calls[0] += 1
+        if calls[0] == 1:
+            raise ValueError("first call broken")
+        return {"url": _FAKE_SEARCH_RESULTS[0]["url"], "quote": TSMC_TRUE_QUOTE}
+
+    result = extract_claim_evidence(
+        "TSMC accelerated its 100% renewable target to 2040",
+        allowlist=TSMC_ALLOWLIST,
+        llm_fn=recovering_llm,
+        search_fn=_always_finds,
+        fetch_fn=_fake_fetch,
+        log_dir=str(tmp_path),
+    )
+    # Attempt 1: malformed; attempt 2: verified. Different stages → no early stop.
+    assert result["status"] == "verified"
+    assert result["attempts"] == 2
+
+
 # --- the single live test (opt-in, costs money) ---------------------------
 
 
