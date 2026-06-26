@@ -127,6 +127,7 @@ def test_vague_claim_is_rejected_without_calling_the_llm(tmp_path):
     result = extract_claim_evidence(
         "TSMC cares deeply about the environment",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=exploding_llm,
         log_dir=str(tmp_path),
     )
@@ -214,6 +215,7 @@ def test_loop_verifies_on_first_attempt_with_good_proposal(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=good_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -242,6 +244,7 @@ def test_loop_early_stops_on_two_no_progress_attempts(tmp_path):
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=stuck_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -286,6 +289,7 @@ def test_loop_runs_to_hard_cap_when_statuses_keep_changing(tmp_path):
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=changing_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -310,12 +314,13 @@ def test_loop_writes_one_log_line_per_attempt(tmp_path):
     extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=stuck_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
         log_dir=str(tmp_path),
     )
-    log_file = tmp_path / "extraction.jsonl"
+    log_file = tmp_path / "evaluation_log.jsonl"
     assert log_file.exists()
     lines = [line for line in log_file.read_text().splitlines() if line.strip()]
     assert len(lines) == 2  # one per attempt, early-stopped at 2
@@ -343,6 +348,7 @@ def test_loop_skips_llm_when_search_returns_empty(tmp_path):
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=exploding_llm,
         search_fn=lambda q: [],
         log_dir=str(tmp_path),
@@ -361,13 +367,14 @@ def test_loop_logs_no_search_results_attempts(tmp_path):
     extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=lambda c, f, s: (_ for _ in ()).throw(
             AssertionError("must not reach LLM")
         ),
         search_fn=lambda q: [],
         log_dir=str(tmp_path),
     )
-    log_file = tmp_path / "extraction.jsonl"
+    log_file = tmp_path / "evaluation_log.jsonl"
     lines = [line for line in log_file.read_text().splitlines() if line.strip()]
     assert len(lines) == 2  # two no_search_results attempts before early stop
 
@@ -389,6 +396,7 @@ def test_loop_passes_search_results_to_llm(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=capturing_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -425,6 +433,7 @@ def test_no_search_results_feedback_is_set_for_next_attempt(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=capturing_llm,
         search_fn=search_succeeds_second_time,
         fetch_fn=_fake_fetch,
@@ -461,6 +470,7 @@ def test_loop_rejects_url_not_from_search_results(tmp_path):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
+            company_name="TSMC",
             llm_fn=offlist_llm,
             search_fn=_always_finds,
             log_dir=str(tmp_path),
@@ -490,6 +500,7 @@ def test_loop_accepts_url_with_trivial_formatting_difference(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=trailing_slash_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -522,6 +533,7 @@ def test_loop_stops_early_on_repeated_fetch_failure(tmp_path):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
+            company_name="TSMC",
             llm_fn=lambda c, f, s: {
                 "url": _FAKE_SEARCH_RESULTS[0]["url"],
                 "quote": TSMC_TRUE_QUOTE,
@@ -571,6 +583,7 @@ def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
+            company_name="TSMC",
             llm_fn=lambda c, f, s: {
                 "url": _FAKE_SEARCH_RESULTS[0]["url"],
                 "quote": TSMC_TRUE_QUOTE,
@@ -587,7 +600,7 @@ def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
     assert result["last_attempt_status"] == "ambiguous"
 
     # Verify stage_reached in log entries
-    log_file = tmp_path / "extraction.jsonl"
+    log_file = tmp_path / "evaluation_log.jsonl"
     entries = [
         json.loads(line) for line in log_file.read_text().splitlines() if line.strip()
     ]
@@ -613,6 +626,7 @@ def test_malformed_llm_response_does_not_raise(tmp_path):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
+            company_name="TSMC",
             llm_fn=broken_llm,
             search_fn=_always_finds,
             fetch_fn=_fake_fetch,
@@ -637,6 +651,7 @@ def test_malformed_llm_response_missing_url_field_does_not_raise(tmp_path):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
+            company_name="TSMC",
             llm_fn=missing_url_llm,
             search_fn=_always_finds,
             fetch_fn=_fake_fetch,
@@ -660,6 +675,7 @@ def test_two_consecutive_malformed_llm_responses_trigger_early_stop(tmp_path):
     result = extract_claim_evidence(
         "TSMC moved its renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=always_broken_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -688,6 +704,7 @@ def test_malformed_llm_response_then_good_response_counts_as_progress(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         llm_fn=recovering_llm,
         search_fn=_always_finds,
         fetch_fn=_fake_fetch,
@@ -720,6 +737,7 @@ def test_live_tsmc_extraction(tmp_path):
     result = extract_claim_evidence(
         "TSMC accelerated its target for 100 percent renewable energy to 2040",
         allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
         log_dir=str(tmp_path),
     )
     assert result["status"] == "verified"
@@ -727,7 +745,7 @@ def test_live_tsmc_extraction(tmp_path):
     # Read real evidence from the structured log rather than changing
     # extract_claim_evidence's return contract (deliberately omits the
     # ClaimTag object — see extraction.py design decision on last_attempt_status).
-    log_path = tmp_path / "extraction.jsonl"
+    log_path = tmp_path / "evaluation_log.jsonl"
     entries = [json.loads(line) for line in log_path.read_text().splitlines()]
 
     verified_entries = [
@@ -738,5 +756,7 @@ def test_live_tsmc_extraction(tmp_path):
     assert len(verified_entries) >= 1
 
     verified = verified_entries[0]
+    assert verified["bucket"] == "A"
+    assert verified["company_name"] == "TSMC"
     assert "tsmc.com" in verified["url"]
     assert len(verified["quote"]) > MINIMUM_QUOTE_LENGTH_CHARS

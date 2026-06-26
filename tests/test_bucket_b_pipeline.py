@@ -13,12 +13,14 @@ Test organisation:
   - live API smoke test (opt-in via RUN_LIVE_API=1)
 """
 
+import json
 import os
 
 import pytest
 
 from bucket_b_pipeline import run_bucket_b_pipeline
 from criterion_evidence import NZIF_CRITERIA
+from log_utils import LOG_FILENAME
 from quote_match import MINIMUM_QUOTE_LENGTH_CHARS
 
 TSMC_ALLOWLIST = ["tsmc.com", "pr.tsmc.com"]
@@ -460,3 +462,207 @@ def test_live_tsmc_bucket_b_ambition():
     # CriterionEvidence's contract. Any other value means check_domain's result
     # is being read incorrectly.
     assert ce.evidence_source_type in ("official", "third_party")
+
+
+# ---------------------------------------------------------------------------
+# Structured logging
+# ---------------------------------------------------------------------------
+
+
+def _read_log(tmp_path):
+    path = tmp_path / LOG_FILENAME
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def test_log_entry_for_excerpt_verified_has_correct_fields(tmp_path):
+    """
+    A successfully verified criterion writes one log entry with bucket="B",
+    company_name, criterion_name, stage_reached="excerpt_verified", and the
+    selected URL.
+    """
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-001",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["bucket"] == "B"
+    assert e["company_name"] == "TSMC"
+    assert e["criterion_name"] == "ambition"
+    assert e["stage_reached"] == "excerpt_verified"
+    assert e["status"] == "excerpt_verified"
+    assert e["url"] == FAKE_URL
+
+
+def test_log_entry_for_no_search_results(tmp_path):
+    """
+    A criterion whose search returns nothing is logged with
+    stage_reached="no_search_results", not silently dropped.
+    """
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-002",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=lambda q: [],
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["stage_reached"] == "no_search_results"
+    assert entries[0]["bucket"] == "B"
+    assert entries[0]["company_name"] == "TSMC"
+
+
+def test_log_entry_for_url_not_from_search_results(tmp_path):
+    """
+    A criterion whose LLM proposes a URL not in search results is logged with
+    stage_reached="url_not_from_search_results".
+    """
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-003",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(FAKE_URL),
+        url_llm_fn=_make_url_llm_fn("https://hallucinated.example.com/bad"),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["stage_reached"] == "url_not_from_search_results"
+    assert entries[0]["bucket"] == "B"
+
+
+def test_log_entry_for_fetch_failed(tmp_path):
+    """
+    A criterion whose fetch fails is logged with stage_reached="fetch_failed".
+    """
+
+    def failing_fetch(url):
+        return {
+            "success": False,
+            "text": None,
+            "content_type": None,
+            "failure_reason": "not_found",
+        }
+
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-004",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=failing_fetch,
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["stage_reached"] == "fetch_failed"
+    assert entries[0]["status"] == "not_found"
+    assert entries[0]["bucket"] == "B"
+
+
+def test_log_entry_for_excerpt_not_verified(tmp_path):
+    """
+    A criterion where find_criterion_evidence returns not_found_after_retries
+    is logged with stage_reached="excerpt_not_verified".
+    """
+
+    def failing_criterion_evidence_fn(document, criterion_name, criterion_text):
+        return {
+            "status": "not_found_after_retries",
+            "excerpt": None,
+            "top_score": None,
+            "attempts": 3,
+            "last_attempt_status": "criterion_not_found",
+        }
+
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-005",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=failing_criterion_evidence_fn,
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    assert entries[0]["stage_reached"] == "excerpt_not_verified"
+    assert entries[0]["bucket"] == "B"
+
+
+def test_bucket_a_and_bucket_b_entries_coexist_in_shared_log(tmp_path):
+    """
+    Running one Bucket A call and one Bucket B call with the same log_dir
+    produces entries from both in the same file, each correctly tagged with
+    their bucket field.
+    """
+    from extraction import extract_claim_evidence
+
+    extract_claim_evidence(
+        "TSMC accelerated its 100% renewable target to 2040",
+        allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
+        llm_fn=lambda c, f, s: {
+            "url": "https://pr.tsmc.com/english/news/3067",
+            "quote": (
+                "moving its target for 100 percent renewable energy consumption "
+                "for all global operations forward to 2040 from 2050"
+            ),
+        },
+        search_fn=lambda q: [
+            {
+                "url": "https://pr.tsmc.com/english/news/3067",
+                "title": "TSMC RE100",
+                "snippet": "TSMC moves target to 2040",
+            }
+        ],
+        fetch_fn=lambda url: {
+            "success": True,
+            "text": (
+                "TSMC announced it is moving its target for 100 percent renewable "
+                "energy consumption for all global operations forward to 2040 from "
+                "2050, accelerating its RE100 commitment by a full decade."
+            ),
+            "content_type": "text/html",
+            "failure_reason": None,
+        },
+        log_dir=str(tmp_path),
+    )
+
+    run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-log-shared",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+
+    entries = _read_log(tmp_path)
+    buckets = {e["bucket"] for e in entries}
+    assert "A" in buckets
+    assert "B" in buckets
+    a_entries = [e for e in entries if e["bucket"] == "A"]
+    b_entries = [e for e in entries if e["bucket"] == "B"]
+    assert all(e["company_name"] == "TSMC" for e in a_entries)
+    assert all(e["company_name"] == "TSMC" for e in b_entries)

@@ -113,6 +113,7 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+from log_utils import append_log_entry
 from page_fetch import fetch_page_text
 from pipeline import verify_bucket_a_claim
 from url_compare import same_url
@@ -173,6 +174,7 @@ class AttemptRecord:
     # "fetch_failed", "verification_completed".
     stage_reached: str
     timestamp: str
+    company_name: str = ""
 
 
 def _has_numeric_token(text: str) -> bool:
@@ -341,27 +343,29 @@ def _default_llm_call(
 
 
 def _log_attempt(record: AttemptRecord, claim_text: str, log_dir: str) -> None:
-    """Append one attempt to a JSON-lines log. Creates log_dir if needed."""
-    os.makedirs(log_dir, exist_ok=True)
-    entry = {
-        "timestamp": record.timestamp,
-        "claim_text": claim_text,
-        "attempt": record.attempt,
-        "url": record.url,
-        "quote": record.quote,
-        "status": record.status,
-        "top_score": record.top_score,
-        "stage_reached": record.stage_reached,
-    }
-    path = os.path.join(log_dir, "extraction.jsonl")
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    """Append one attempt to the shared evaluation log."""
+    append_log_entry(
+        {
+            "timestamp": record.timestamp,
+            "bucket": "A",
+            "company_name": record.company_name,
+            "claim_text": claim_text,
+            "attempt": record.attempt,
+            "url": record.url,
+            "quote": record.quote,
+            "status": record.status,
+            "top_score": record.top_score,
+            "stage_reached": record.stage_reached,
+        },
+        log_dir,
+    )
 
 
 def extract_claim_evidence(
     claim_text: str,
     allowlist: list[str],
     *,
+    company_name: str,
     claim_id: str = "claim",
     llm_fn=None,
     search_fn=None,
@@ -448,6 +452,7 @@ def extract_claim_evidence(
                 stage_reached="no_search_results",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                company_name=company_name,
             )
             _log_attempt(record, claim_text, log_dir)
             history.append(record)
@@ -478,6 +483,7 @@ def extract_claim_evidence(
                 stage_reached="malformed_llm_response",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                company_name=company_name,
             )
             _log_attempt(record, claim_text, log_dir)
             history.append(record)
@@ -506,6 +512,7 @@ def extract_claim_evidence(
                 stage_reached="url_not_from_search_results",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                company_name=company_name,
             )
             _log_attempt(record, claim_text, log_dir)
             history.append(record)
@@ -527,6 +534,7 @@ def extract_claim_evidence(
                 stage_reached="fetch_failed",
                 top_score=None,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                company_name=company_name,
             )
             _log_attempt(record, claim_text, log_dir)
             history.append(record)
@@ -555,6 +563,7 @@ def extract_claim_evidence(
             stage_reached="verification_completed",
             top_score=score,
             timestamp=datetime.now(timezone.utc).isoformat(),
+            company_name=company_name,
         )
         _log_attempt(record, claim_text, log_dir)
         history.append(record)

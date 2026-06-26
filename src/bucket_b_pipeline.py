@@ -64,11 +64,14 @@ tag_schema already defines.
 
 import json
 import os
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
 from criterion_evidence import NZIF_CRITERIA, find_criterion_evidence
 from domain_check import check_domain
+from log_utils import append_log_entry
 from page_fetch import fetch_page_text
 from tag_schema import ClaimTag, CriterionEvidence
 from url_compare import same_url
@@ -79,6 +82,48 @@ load_dotenv()
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 _ALL_CRITERIA = list(NZIF_CRITERIA.keys())
+
+
+@dataclass
+class BucketBAttemptRecord:
+    """
+    One criterion attempt within a run_bucket_b_pipeline call, written to the
+    shared evaluation log. One entry per criterion regardless of where the chain
+    stopped — mirrors AttemptRecord's one-entry-per-attempt granularity in
+    extraction.py, which proved sufficient for diagnosing real bugs (including
+    the search-query bug found in the first live run of this module).
+
+    stage_reached values:
+      "no_search_results"          — search returned nothing
+      "url_not_from_search_results"— LLM proposed a URL not in search results
+      "fetch_failed"               — page fetch failed
+      "excerpt_not_verified"       — find_criterion_evidence returned
+                                     not_found_after_retries
+      "excerpt_verified"           — full chain succeeded
+    """
+
+    company_name: str
+    criterion_name: str
+    stage_reached: str
+    status: str
+    url: str
+    timestamp: str
+
+
+def _log_criterion_attempt(record: BucketBAttemptRecord, log_dir: str) -> None:
+    """Append one criterion attempt to the shared evaluation log."""
+    append_log_entry(
+        {
+            "timestamp": record.timestamp,
+            "bucket": "B",
+            "company_name": record.company_name,
+            "criterion_name": record.criterion_name,
+            "stage_reached": record.stage_reached,
+            "status": record.status,
+            "url": record.url,
+        },
+        log_dir,
+    )
 
 
 def _default_url_selection_llm_call(
@@ -137,6 +182,7 @@ def run_bucket_b_pipeline(
     url_llm_fn=None,
     fetch_fn=None,
     criterion_evidence_fn=None,
+    log_dir: str = "logs",
 ) -> ClaimTag:
     """
     Run the full Bucket B evidence-gathering pipeline for `company_name`.
@@ -211,13 +257,26 @@ def run_bucket_b_pipeline(
         criterion_text = NZIF_CRITERIA[criterion_name]
         first_clause = criterion_text.split(".")[0]
         query = f"{company_name} {first_clause}"
+        _ts = datetime.now(timezone.utc).isoformat()
 
         # --- search ---
         search_results = _search_fn(query)
         if not search_results:
+            _log_criterion_attempt(
+                BucketBAttemptRecord(
+                    company_name=company_name,
+                    criterion_name=criterion_name,
+                    stage_reached="no_search_results",
+                    status="no_search_results",
+                    url="",
+                    timestamp=_ts,
+                ),
+                log_dir,
+            )
             continue
 
         # --- URL selection ---
+        url = ""
         try:
             proposal = _url_llm_fn(
                 company_name, criterion_name, criterion_text, search_results
@@ -226,10 +285,32 @@ def run_bucket_b_pipeline(
             if not isinstance(url, str):
                 raise ValueError("url must be a string")
         except Exception:
+            _log_criterion_attempt(
+                BucketBAttemptRecord(
+                    company_name=company_name,
+                    criterion_name=criterion_name,
+                    stage_reached="url_not_from_search_results",
+                    status="malformed_llm_response",
+                    url="",
+                    timestamp=_ts,
+                ),
+                log_dir,
+            )
             continue
 
         # --- url_compare gate ---
         if not any(same_url(url, r["url"]) for r in search_results):
+            _log_criterion_attempt(
+                BucketBAttemptRecord(
+                    company_name=company_name,
+                    criterion_name=criterion_name,
+                    stage_reached="url_not_from_search_results",
+                    status="url_not_from_search_results",
+                    url=url,
+                    timestamp=_ts,
+                ),
+                log_dir,
+            )
             continue
 
         # --- fetch (with in-call cache) ---
@@ -238,6 +319,17 @@ def run_bucket_b_pipeline(
         else:
             fetch_result = _fetch_fn(url)
             if not fetch_result["success"]:
+                _log_criterion_attempt(
+                    BucketBAttemptRecord(
+                        company_name=company_name,
+                        criterion_name=criterion_name,
+                        stage_reached="fetch_failed",
+                        status=fetch_result["failure_reason"] or "fetch_failed",
+                        url=url,
+                        timestamp=_ts,
+                    ),
+                    log_dir,
+                )
                 continue
             document = fetch_result["text"]
             fetch_cache[url] = document
@@ -245,12 +337,34 @@ def run_bucket_b_pipeline(
         # --- criterion evidence extraction ---
         result = _criterion_evidence_fn(document, criterion_name, criterion_text)
         if result["status"] != "excerpt_verified":
+            _log_criterion_attempt(
+                BucketBAttemptRecord(
+                    company_name=company_name,
+                    criterion_name=criterion_name,
+                    stage_reached="excerpt_not_verified",
+                    status=result["status"],
+                    url=url,
+                    timestamp=_ts,
+                ),
+                log_dir,
+            )
             continue
 
         # --- evidence_source_type via domain check ---
         domain_result = check_domain(url, allowlist)
         source_type = "official" if domain_result["passed"] else "third_party"
 
+        _log_criterion_attempt(
+            BucketBAttemptRecord(
+                company_name=company_name,
+                criterion_name=criterion_name,
+                stage_reached="excerpt_verified",
+                status="excerpt_verified",
+                url=url,
+                timestamp=_ts,
+            ),
+            log_dir,
+        )
         gathered.append(
             CriterionEvidence(
                 criterion_name=criterion_name,
