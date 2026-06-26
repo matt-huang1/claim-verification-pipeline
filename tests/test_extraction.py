@@ -30,6 +30,7 @@ from extraction import (
     is_verifiable_claim,
     no_meaningful_progress,
 )
+from quote_match import MINIMUM_QUOTE_LENGTH_CHARS
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -722,3 +723,20 @@ def test_live_tsmc_extraction(tmp_path):
         log_dir=str(tmp_path),
     )
     assert result["status"] == "verified"
+
+    # Read real evidence from the structured log rather than changing
+    # extract_claim_evidence's return contract (deliberately omits the
+    # ClaimTag object — see extraction.py design decision on last_attempt_status).
+    log_path = tmp_path / "extraction.jsonl"
+    entries = [json.loads(line) for line in log_path.read_text().splitlines()]
+
+    verified_entries = [
+        e
+        for e in entries
+        if e["stage_reached"] == "verification_completed" and e["status"] == "verified"
+    ]
+    assert len(verified_entries) >= 1
+
+    verified = verified_entries[0]
+    assert "tsmc.com" in verified["url"]
+    assert len(verified["quote"]) > MINIMUM_QUOTE_LENGTH_CHARS
