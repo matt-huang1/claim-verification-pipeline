@@ -19,6 +19,7 @@ import pytest
 
 from bucket_b_pipeline import run_bucket_b_pipeline
 from criterion_evidence import NZIF_CRITERIA
+from quote_match import MINIMUM_QUOTE_LENGTH_CHARS
 
 TSMC_ALLOWLIST = ["tsmc.com", "pr.tsmc.com"]
 
@@ -407,6 +408,11 @@ def test_live_tsmc_bucket_b_ambition():
     Non-deterministic: search results, model output, and fetched content vary
     across runs. Occasional failure does not indicate a code defect. Requires
     OPENAI_API_KEY and TAVILY_API_KEY in the environment.
+
+    When evidence IS found (overall_status == "criteria_evidence_gathered"),
+    the assertions below verify it is real, well-formed evidence, not just that
+    the pipeline didn't crash. A PASSED result should be self-explanatory
+    without a separate manual script.
     """
     tag = run_bucket_b_pipeline(
         company_name="TSMC",
@@ -415,8 +421,42 @@ def test_live_tsmc_bucket_b_ambition():
         criteria=["ambition"],
     )
 
-    # The overall status must be either criteria_evidence_gathered (success)
-    # or incomplete (ambition evidence not found). Either is an acceptable
-    # live outcome — what is NOT acceptable is an uncaught exception.
-    assert tag.overall_status in ("criteria_evidence_gathered", "incomplete")
     assert tag.bucket == "B"
+    assert tag.overall_status in ("criteria_evidence_gathered", "incomplete")
+
+    if tag.overall_status == "incomplete":
+        # Acceptable live outcome: search returned nothing usable or the model
+        # couldn't find a verifiable excerpt on this run. Not a code defect.
+        print(
+            "\nincomplete: ambition evidence was not found on this run — "
+            "this can happen on a single live attempt and is not necessarily "
+            "a regression"
+        )
+        return
+
+    # Evidence was found: assert it is real and well-formed, so PASSED is
+    # actually meaningful rather than requiring manual follow-up inspection.
+    assert tag.criteria_evidence is not None
+    assert len(tag.criteria_evidence) == 1
+
+    ce = tag.criteria_evidence[0]
+
+    # criterion_text must be the verified primary-source wording, not some
+    # other string that snuck in via a code path that doesn't use NZIF_CRITERIA.
+    assert ce.criterion_text == NZIF_CRITERIA["ambition"]
+
+    # evidence_text must be a real excerpt, not an empty string or a trivially
+    # short response. Threshold reuses MINIMUM_QUOTE_LENGTH_CHARS from
+    # quote_match.py (15 chars), the same minimum already enforced on Bucket A
+    # quote evidence — a reasonable floor for any verified text excerpt.
+    assert len(ce.evidence_text) > MINIMUM_QUOTE_LENGTH_CHARS
+
+    # The source must be TSMC's own domain. "tsmc.com" appearing anywhere in
+    # the URL is a sanity check that the pipeline didn't select a wrong-company
+    # or hallucinated source.
+    assert "tsmc.com" in ce.evidence_source_url
+
+    # evidence_source_type must be one of the two defined values from
+    # CriterionEvidence's contract. Any other value means check_domain's result
+    # is being read incorrectly.
+    assert ce.evidence_source_type in ("official", "third_party")
