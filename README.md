@@ -53,7 +53,11 @@ Further companies (Patagonia, TotalEnergies, Cheniere, Coal India, Vestas, Micro
 
 ## Status
 
-The Bucket A pipeline is complete, hardened, and **live-verified end to end**: domain check, web search, URL-match enforcement, page fetch, quote match, tag schema, pipeline wiring, and the retry loop have all been run together against the real internet, not just tested in isolation with mocks. Buckets B, C, and D are designed in principle (see the table above and `tag_schema.py`'s evidence types) but not yet implemented — that's the natural next piece of depth. Breadth (more ground-truth companies) is an explicit, deliberate backlog, not a current priority.
+The Bucket A pipeline is complete, hardened, and **live-verified end to end**: domain check, web search, URL-match enforcement, page fetch, quote match, tag schema, pipeline wiring, and the retry loop have all been run together against the real internet, not just tested in isolation with mocks.
+
+Bucket B is in progress, not yet wired into a full pipeline. The evidence structure (`CriterionEvidence` in `tag_schema.py`) and the excerpt-finding module (`criterion_evidence.py`) are both built and tested, with the deliberate design split this bucket required: a "what did the company claim" fact-finding half, verified the same way Bucket A is (via `quote_match`, never trusted on a model's word alone), kept separate from the "does this meet the framework's bar" judgment half, which the system never attempts to automate — a human reads the real criterion wording alongside the verified evidence and decides. The real NZIF 2.0 criteria text this module checks against was initially built from an AI-generated reconstruction that was *not* actually verified against the primary source, and was found to be wrong in several real, substantive ways before it ever shipped. It was corrected by going to the actual primary-source document directly (which, notably, blocks automated fetching entirely) and hand-transcribing the real criteria table, the same action that resolved this project's founding failure months earlier. See `DESIGN_DECISIONS.md` for the full account — it's one of the clearest demonstrations in the whole project of why every confident-looking claim, including the system's own, gets checked against its actual source rather than trusted on sight.
+
+Buckets C and D remain designed in principle only (see the table above and `tag_schema.py`'s evidence types), not yet implemented. Breadth (more ground-truth companies) is an explicit, deliberate backlog, not a current priority.
 
 ## Stack
 
