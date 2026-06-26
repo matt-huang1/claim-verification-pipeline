@@ -13,14 +13,22 @@ What is tested:
   - Content-type classification uses the real Content-Type header, not the URL
     string: a URL with no file extension but Content-Type: application/pdf
     takes the PDF extraction path.
-  - Missing Content-Length returns failure_reason="size_unknown" AND does not
-    download the body at all (verified by tracking whether .content is accessed).
-  - Content-Length present but over the type-specific cap returns "too_large";
-    since HTML (2 MB) and PDF (20 MB) caps differ, both are tested separately,
-    plus a case that verifies the PDF cap is the one that applies to PDFs
-    (a size that exceeds the HTML cap but not the PDF cap must succeed).
+  - NO Content-Length (chunked transfer encoding) with a small body now
+    SUCCEEDS: the body is streamed with a running cap and assembled fully
+    if it completes under the cap. (Previously returned "size_unknown" and
+    refused immediately — that behaviour was wrong for legitimate small pages
+    served with chunked encoding, e.g. TSMC's Drupal-generated press releases.)
+  - NO Content-Length with an oversized body returns "too_large" and confirms
+    streaming stops early — the full body is never fully read/buffered.
+  - Content-Length present but over the type-specific cap returns "too_large"
+    with no body download (fast-path, unchanged behaviour).
+  - HTML (2 MB) and PDF (20 MB) caps are tested separately, plus a case that
+    verifies the PDF cap applies to PDFs (a size over HTML cap but under PDF
+    cap must succeed).
   - An unsupported content type returns "unsupported_content_type" regardless
     of declared size.
+  - download_error (body fails mid-stream) and parse_error (body arrived but
+    extraction raised) are distinct failure reasons.
 """
 
 import requests
@@ -36,8 +44,11 @@ def _mock_response(
     body=b"<html><body>Hello world</body></html>",
 ):
     """
-    Build a minimal mock requests.Response. content_length=None means
-    the Content-Length header is absent entirely (not zero).
+    Build a minimal mock requests.Response.
+
+    content_length=None means the Content-Length header is absent entirely
+    (not zero). iter_content is set up to yield the body as a single chunk,
+    supporting tests that exercise the streaming path.
     """
     mock = MagicMock()
     mock.status_code = status_code
@@ -48,6 +59,7 @@ def _mock_response(
         headers["Content-Length"] = str(content_length)
     mock.headers = headers
     mock.content = body
+    mock.iter_content.return_value = iter([body])
     return mock
 
 
@@ -191,38 +203,65 @@ def test_content_type_determined_by_header_not_url():
     assert "annual report text" in result["text"]
 
 
-# --- Content-Length checks ---
+# --- no Content-Length (chunked transfer encoding) ---
 
 
-def test_missing_content_length_returns_size_unknown_without_downloading():
+def test_no_content_length_small_body_succeeds():
     """
-    When Content-Length is absent the function must return size_unknown
-    immediately — it must NOT download the body at all. A _TrackedResponse
-    subclass records whether .content was ever accessed; the test asserts
-    it was not, verifying the hard-refusal rather than a mid-download cap.
+    A response without Content-Length (e.g. chunked transfer encoding on a
+    dynamically-generated page) must now SUCCEED if the body completes under
+    the cap. Previously this returned "size_unknown" and refused immediately —
+    the wrong outcome for a legitimate small page. Found via a live test
+    against TSMC's Drupal-served press release at pr.tsmc.com/english/news/3067.
     """
-    body_accessed = []
+    mock_resp = _mock_response(
+        content_type="text/html; charset=utf-8",
+        content_length=None,  # no Content-Length header
+        body=HTML_BODY,
+    )
+    # iter_content already set up by _mock_response to yield HTML_BODY
+    with patch("requests.get", return_value=mock_resp):
+        result = fetch_page_text("https://tsmc.com/press")
+    assert result["success"] is True
+    assert "2040" in result["text"]
+    assert result["failure_reason"] is None
 
-    class _TrackedResponse(MagicMock):
-        @property
-        def content(self):
-            body_accessed.append(True)
-            return b"<html>should never reach here</html>"
 
-    mock_resp = _TrackedResponse()
-    mock_resp.status_code = 200
-    mock_resp.headers = {
-        "Content-Type": "text/html; charset=utf-8"
-    }  # no Content-Length
+def test_no_content_length_oversized_body_returns_too_large():
+    """
+    A response without Content-Length whose streaming body exceeds the cap
+    must fail as "too_large" — and streaming must stop as soon as the cap is
+    crossed, not after the full body is read. Verified by counting how many
+    chunks the generator actually yielded before the function returned.
+    """
+    chunk_size = 8192
+    # Enough chunks to definitively cross HTML_MAX_BYTES
+    n_chunks = (HTML_MAX_BYTES // chunk_size) + 2
+    chunks_yielded = [0]
+
+    def _oversized_gen():
+        chunk = b"x" * chunk_size
+        for _ in range(n_chunks):
+            chunks_yielded[0] += 1
+            yield chunk
+
+    mock_resp = _mock_response(
+        content_type="text/html; charset=utf-8",
+        content_length=None,
+        body=b"",  # .content is not used for the streaming path
+    )
+    mock_resp.iter_content.return_value = _oversized_gen()
 
     with patch("requests.get", return_value=mock_resp):
-        result = fetch_page_text("https://tsmc.com/unknown-size")
+        result = fetch_page_text("https://tsmc.com/huge-page")
 
     assert result["success"] is False
-    assert result["failure_reason"] == "size_unknown"
-    assert (
-        body_accessed == []
-    ), "body must not be accessed when Content-Length is absent"
+    assert result["failure_reason"] == "too_large"
+    # Streaming stopped as soon as the cap was crossed — not all chunks consumed.
+    assert chunks_yielded[0] < n_chunks
+
+
+# --- Content-Length present and over cap (fast-path, unchanged) ---
 
 
 def test_html_over_cap_returns_too_large():
@@ -281,7 +320,7 @@ def test_download_error_when_response_content_raises():
     A connection drop after headers arrive but before the full body is
     received raises inside response.content. This must return
     failure_reason="download_error", distinct from parse_error (body
-    arrived but extraction failed). Uses a _TrackedResponse subclass
+    arrived but extraction failed). Uses a _DroppingResponse subclass
     to make .content raise a ConnectionError.
     """
 

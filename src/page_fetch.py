@@ -6,10 +6,6 @@ match_quote() and the existing pipeline. This is the fetch step that slots
 in between domain_check passing (confirming a URL is legitimate) and
 quote_match running (checking whether a quote appears in the fetched text).
 
-Before this module existed, `document` had to be provided as a hardcoded
-string in every test and live extraction run. This module is what makes
-that automatic.
-
 SCOPE LIMIT — plain text extraction only:
 
 This module extracts text from HTML pages and from clean, digitally-created
@@ -43,28 +39,48 @@ DEPENDENCY CHOICES:
   wants to avoid. pypdf is MIT-licensed and sufficient for clean, digitally-
   created documents.
 
-SIZE-CHECK DESIGN — why Content-Length before download, not mid-download cap:
+SIZE-CHECK DESIGN — streaming cap for responses without Content-Length:
 
-The function checks the Content-Length header BEFORE downloading the body,
-and refuses to proceed if Content-Length is missing or too large. This is a
-deliberate choice over the alternative of downloading and capping mid-stream:
+The original design checked the Content-Length header before downloading and
+refused immediately if it was missing ("size_unknown") or too large
+("too_large"). A live test against TSMC's actual press release URL
+(https://pr.tsmc.com/english/news/3067) surfaced a real gap: the server uses
+chunked transfer encoding (common for dynamically-generated pages, e.g.
+Drupal), which legitimately cannot send Content-Length in advance, by design,
+not by misconfiguration. The 184 KB page was correctly refused as "size_unknown"
+— a real, small, legitimate document wrongly rejected.
 
-  A mid-download cutoff can produce either a usable truncated document or a
-  broken, unparseable one (a truncated PDF is invalid; truncated HTML may be
-  mid-tag). There is no reliable way to know which in advance. Replacing a
-  clean failure with an unpredictable one does not actually solve the problem.
+The fix streams the response body in chunks (response.iter_content), tracking
+a running cumulative byte count. If the count crosses the type-specific cap
+before the stream completes, the download is aborted and "too_large" is
+returned — the same outcome as the pre-download Content-Length check, just
+detected during streaming for the no-Content-Length case. If the stream
+completes under the cap, the full, complete, parseable document is assembled
+and returned — identical to the Content-Length-present-and-valid success path
+in every way.
 
-  Missing Content-Length is treated as an outright failure for the same
-  reason: without a declared size there is no way to know whether downloading
-  is safe before starting, so the function refuses rather than guessing.
+This is NOT the mid-download truncation approach considered and rejected in
+the original design. That approach cut off at an arbitrary byte count and
+attempted to parse whatever partial bytes resulted — a truncated PDF is
+invalid, truncated HTML may be mid-tag, and there is no way to know in
+advance which you'll get. This fix never parses a partial document: either
+the full stream completes (success) or the cap is crossed and the entire
+attempt is refused (failure). The original protection against genuinely
+oversized responses is fully preserved.
 
-  The caps themselves (HTML_MAX_BYTES = 2 MB, PDF_MAX_BYTES = 20 MB) are
-  starting assumptions based on real documents encountered in this project
-  (TSMC press releases and sustainability reports), not derived from a
-  formula. They should be revisited if real documents routinely exceed them.
-  This mirrors the same "documented starting assumption" pattern used for
-  AMBIGUITY_GAP_THRESHOLD in quote_match.py and NO_PROGRESS_SCORE_DELTA
-  in extraction.py.
+For responses WITH a Content-Length header: the fast-path pre-download check
+is kept unchanged. If Content-Length is present and already exceeds the cap,
+there is no reason to begin streaming at all.
+
+"size_unknown" AS A FAILURE REASON IS NOW UNREACHABLE:
+
+After this fix, no code path in this module returns "size_unknown". Previously
+it fired for: (a) absent Content-Length, and (b) an unparseable Content-Length
+value (e.g. "Content-Length: abc"). Case (a) is now handled by streaming.
+Case (b) is treated the same way (stream with cap), rather than refusing
+outright for what is a malformed-but-harmless header from a mostly-functional
+server. "size_unknown" is removed from the failure_reason vocabulary below
+rather than left as dead code.
 
 NO RETRY LOGIC:
 
@@ -84,13 +100,17 @@ from html.parser import HTMLParser
 import requests
 from pypdf import PdfReader
 
-# Size caps applied BEFORE downloading the body. Starting assumptions based
-# on TSMC press releases (~50-200 KB) and annual/sustainability reports
-# (several MB as PDFs). Revisit if real documents routinely exceed these.
-# See module docstring, "SIZE-CHECK DESIGN", for the reasoning behind
-# checking before download rather than capping mid-stream.
+# Size caps applied during streaming (no Content-Length) or before download
+# (Content-Length present). Starting assumptions based on TSMC press releases
+# (~50-200 KB) and annual/sustainability reports (several MB as PDFs).
+# Revisit if real documents routinely exceed these. See module docstring,
+# "SIZE-CHECK DESIGN", for the reasoning behind streaming rather than
+# truncating mid-download.
 HTML_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 PDF_MAX_BYTES = 20 * 1024 * 1024  # 20 MB
+
+# Chunk size for streaming reads on responses without Content-Length.
+_STREAM_CHUNK_SIZE = 8192
 
 
 class _TextExtractor(HTMLParser):
@@ -154,8 +174,10 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
     Retrieve the text content of `url`.
 
     Makes the request with stream=True so headers are available before the
-    body is downloaded, checks Content-Length against type-specific caps,
-    then downloads and extracts text only if all checks pass.
+    body is downloaded. For responses with a Content-Length header, checks
+    it against the type-specific cap before downloading. For responses
+    without Content-Length (chunked transfer encoding, etc.), streams the
+    body in chunks and enforces the cap continuously during streaming.
 
     Args:
         url:     The URL to fetch. Must already have been confirmed
@@ -178,12 +200,17 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
         "not_found"                — HTTP 404
         "http_error"               — any other non-200 status
         "unsupported_content_type" — content type is not html or pdf
-        "size_unknown"             — Content-Length header absent
-        "too_large"                — Content-Length exceeds the type cap
+        "too_large"                — declared Content-Length exceeds the cap,
+                                     OR streaming cumulative bytes crossed the
+                                     cap before the response completed
         "download_error"           — body failed mid-download (connection drop
                                      after headers arrived but before full body)
         "parse_error"              — body downloaded but extraction failed
                                      (malformed PDF, decode failure, etc.)
+
+    Note: "size_unknown" was removed as a failure reason. Responses without
+    a Content-Length header are now handled via streaming with a cumulative
+    cap (see module docstring, "SIZE-CHECK DESIGN").
     """
 
     def _fail(reason: str, content_type: str | None = None) -> dict:
@@ -216,23 +243,44 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
     if ct_class == "other":
         return _fail("unsupported_content_type", content_type=raw_ct)
 
-    cl_header = response.headers.get("Content-Length")
-    if cl_header is None:
-        return _fail("size_unknown", content_type=raw_ct)
-
-    try:
-        content_length = int(cl_header)
-    except ValueError:
-        return _fail("size_unknown", content_type=raw_ct)
-
     cap = HTML_MAX_BYTES if ct_class == "html" else PDF_MAX_BYTES
-    if content_length > cap:
-        return _fail("too_large", content_type=raw_ct)
 
-    try:
-        body = response.content
-    except Exception:
-        return _fail("download_error", content_type=raw_ct)
+    # Parse Content-Length if present. An absent or unparseable value means
+    # we fall through to streaming. An invalid value (e.g. "abc") is treated
+    # the same as absent — stream with a running cap rather than refusing
+    # outright, since the server may still deliver a legitimately sized body.
+    cl_header = response.headers.get("Content-Length")
+    content_length: int | None = None
+    if cl_header is not None:
+        try:
+            content_length = int(cl_header)
+        except ValueError:
+            pass  # treat invalid header like absent
+
+    if content_length is not None:
+        # Fast-path: Content-Length known before download.
+        if content_length > cap:
+            return _fail("too_large", content_type=raw_ct)
+        # Under cap with known size — download body in one shot.
+        try:
+            body = response.content
+        except Exception:
+            return _fail("download_error", content_type=raw_ct)
+    else:
+        # No Content-Length (chunked transfer encoding, dynamic pages, etc.).
+        # Stream in chunks and enforce the cap as bytes accumulate. Abort if
+        # the running total crosses the cap — never return a partial document.
+        chunks: list[bytes] = []
+        total = 0
+        try:
+            for chunk in response.iter_content(chunk_size=_STREAM_CHUNK_SIZE):
+                total += len(chunk)
+                if total > cap:
+                    return _fail("too_large", content_type=raw_ct)
+                chunks.append(chunk)
+            body = b"".join(chunks)
+        except Exception:
+            return _fail("download_error", content_type=raw_ct)
 
     try:
         text = _html_to_text(body) if ct_class == "html" else _pdf_to_text(body)
