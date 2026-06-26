@@ -604,14 +604,14 @@ def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
 )
 def test_live_tsmc_extraction(tmp_path):
     """
-    Exercises the full real pipeline: real Brave Search API call, real OpenAI
+    Exercises the full real pipeline: real Tavily Search API call, real OpenAI
     API call, and a real HTTP fetch of whatever URL the model selects from
     the search results. All three external calls cost money and are subject
     to rate limits and availability. This test is non-deterministic: search
     results, model output, and fetched page content all vary across runs. It
     can occasionally fail even when the code is correct — that is exactly why
     it is isolated from the deterministic suite with RUN_LIVE_API=1 opt-in.
-    Requires OPENAI_API_KEY and BRAVE_API_KEY in the environment.
+    Requires OPENAI_API_KEY and TAVILY_API_KEY in the environment.
     """
     result = extract_claim_evidence(
         "TSMC accelerated its target for 100 percent renewable energy to 2040",
