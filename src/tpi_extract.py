@@ -310,7 +310,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
             "overall_level": int | None,
             "indicators": {1: "yes", ..., 23: "no"},
             "historical_levels": [(date_str, level_int), ...] | None,
-            "current_level_date": str | None,
+            "current_level_date": str | None,  # date of TPI's most recent assessment, NOT the date the company first reached its current level — those differ when a level is held across multiple cycles (e.g. TotalEnergies held Level 4 from 2018–2023 before reaching Level 5 in Dec 2024); to find "when did this company reach level X," scan historical_levels for the first entry where level_int == X
             "max_level": int | None,
             "failure_reason": None,
             "historical_fetch_failure_reason": str | None,
