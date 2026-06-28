@@ -157,6 +157,58 @@ class CriterionEvidence:
 
 
 @dataclass(frozen=True)
+class TPIManagementQualityEvidence:
+    """
+    Evidence for one company's TPI Management Quality assessment.
+
+    Stores the complete, real result from tpi_extract.py - all 23 indicator
+    results and the full historical assessment trend, not a summarized or
+    compressed form. Same decoupling principle as QuoteMatchEvidence: this
+    module doesn't import tpi_extract.py's internals, just the shape of data
+    a human reviewer needs.
+
+    Deliberately stores FULL detail, not a compact summary (e.g. not "1-20:
+    yes, 21-23: no" or a trend "shape" description): a range-based indicator
+    summary would silently misrepresent a company with scattered, non-
+    clustered failures (no guarantee failures cluster at the end - tested
+    against this directly before deciding), and a compressed trend
+    description would lose real information (e.g. whether a score ever
+    decreased, the true assessment count). Any compact rendering for display
+    belongs in a future presentation layer, not in this data structure - the
+    same principle CriterionEvidence and QuoteMatchEvidence already follow.
+
+    Fields:
+        company_tpi_id: TPI's internal numeric company ID (e.g. "1216")
+        company_slug:   the URL slug used to fetch this data (e.g. "totalenergies")
+        overall_level:  the company's current Management Quality level (0-5)
+        current_level_date: date of TPI's most recent assessment (NOT
+                        necessarily when the company first reached this
+                        level - see tpi_extract.py's docstring on this
+                        distinction)
+        indicator_results: dict[int, str], all 23 real "yes"/"no" results,
+                        keyed by indicator number
+        historical_levels: list[tuple[str, int]], the full (date, level)
+                        history from TPI's own chart data, oldest first
+        max_level:      the ceiling level TPI's methodology defines (5)
+
+    Deliberately NO verdict field: same principle as CriterionEvidence - this
+    is real, deterministic, already-fetched TPI data (not a model's claim
+    needing verification), so there's no "is this adequate" judgment to
+    automate here. The judgment this evidence informs is a human's to make,
+    looking at this evidence alongside NZIF criteria evidence, exactly as
+    already done by hand in the real RBC analysis this project supports.
+    """
+
+    company_tpi_id: str
+    company_slug: str
+    overall_level: int
+    current_level_date: str | None
+    indicator_results: dict[int, str]
+    historical_levels: list[tuple[str, int]]
+    max_level: int
+
+
+@dataclass(frozen=True)
 class SourcePluralityEvidence:
     """
     Placeholder for Bucket C verification: source plurality plus explicit
@@ -210,6 +262,7 @@ class ClaimTag:
     domain_evidence: DomainCheckEvidence | None = None
     quote_evidence: QuoteMatchEvidence | None = None
     criteria_evidence: list[CriterionEvidence] | None = None
+    tpi_evidence: TPIManagementQualityEvidence | None = None
     source_plurality_evidence: SourcePluralityEvidence | None = None
     assumptions_evidence: AssumptionsStatedEvidence | None = None
 
@@ -237,15 +290,33 @@ class ClaimTag:
             return "verified"
 
         if self.bucket == "B":
-            if not self.criteria_evidence:
-                return "incomplete"
-            # No automated verdict: the system collects evidence, a human
-            # reads criterion_text alongside evidence_text and decides.
-            # "criteria_evidence_gathered" signals the evidence is ready for
-            # human review — parallel to Bucket C's "disambiguated" and
-            # Bucket D's "assumptions_explicit", which are also not "verified"
-            # in the Bucket A sense.
-            return "criteria_evidence_gathered"
+            if self.criteria_evidence is not None and self.tpi_evidence is not None:
+                # Both fields populated on one ClaimTag is a bug: NZIF
+                # alignment evidence and TPI Management Quality evidence are
+                # independent claims from independent frameworks and must live
+                # on separate ClaimTags. Surfacing this as a named, visible
+                # error is better than silently resolving to whichever check
+                # runs first and hiding the other field's existence.
+                return "conflicting_evidence_types"
+            if self.criteria_evidence is not None:
+                if not self.criteria_evidence:
+                    return "incomplete"
+                # No automated verdict: the system collects evidence, a human
+                # reads criterion_text alongside evidence_text and decides.
+                # "criteria_evidence_gathered" signals the evidence is ready
+                # for human review — parallel to Bucket C's "disambiguated"
+                # and Bucket D's "assumptions_explicit", which are also not
+                # "verified" in the Bucket A sense.
+                return "criteria_evidence_gathered"
+            if self.tpi_evidence is not None:
+                # Deliberately distinct from "verified" (Bucket A's two-
+                # independent-checks-agree outcome) and from
+                # "criteria_evidence_gathered" (Bucket B's AI-proposal-then-
+                # checked outcome). TPI data is fetched directly from source
+                # with no AI claim or check involved — a genuinely different
+                # mechanism, not a weaker form of either other status.
+                return "tpi_data_fetched"
+            return "incomplete"
 
         if self.bucket == "C":
             if self.source_plurality_evidence is None:

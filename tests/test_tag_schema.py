@@ -15,6 +15,7 @@ from tag_schema import (
     DomainCheckEvidence,
     QuoteMatchEvidence,
     SourcePluralityEvidence,
+    TPIManagementQualityEvidence,
 )
 
 
@@ -209,6 +210,94 @@ def test_bucket_b_distinguishes_official_and_third_party_source_type():
     assert official.evidence_source_type == "official"
     assert third_party.evidence_source_type == "third_party"
     assert official.evidence_source_type != third_party.evidence_source_type
+
+
+def _totalenergies_tpi_evidence():
+    """
+    Real TotalEnergies TPI data as confirmed 2026-06-28. Used as a concrete,
+    real-world fixture rather than a fully synthetic one: the actual known
+    result (Level 5, failing indicators 21 and 22) is more meaningful than
+    arbitrary placeholder values, and was independently cross-checked against
+    an RBC analyst document before being used here.
+    """
+    indicators = {i: "yes" for i in range(1, 24)}
+    indicators[21] = "no"
+    indicators[22] = "no"
+    return TPIManagementQualityEvidence(
+        company_tpi_id="1216",
+        company_slug="totalenergies",
+        overall_level=5,
+        current_level_date="15/12/2025",
+        indicator_results=indicators,
+        historical_levels=[
+            ("01/07/2017", 3),
+            ("01/07/2018", 4),
+            ("01/12/2024", 5),
+            ("15/12/2025", 5),
+        ],
+        max_level=5,
+    )
+
+
+def test_bucket_b_with_tpi_evidence_returns_tpi_data_fetched():
+    """
+    TPI Management Quality and NZIF criteria are independent claims from
+    independent frameworks — confirmed against TotalEnergies's real result:
+    "Aligning to a net zero pathway" (NZIF) and "Level 5, failing 21/22"
+    (TPI) are two different verdicts, not the same fact restated.
+
+    "tpi_data_fetched" is deliberately distinct from "verified" (Bucket A's
+    two-independent-checks-agree outcome) and "criteria_evidence_gathered"
+    (Bucket B's AI-proposal-then-checked outcome): TPI data is fetched
+    directly from source with no AI claim or check involved — a genuinely
+    different mechanism.
+    """
+    tag = ClaimTag(
+        claim_id="tpi1",
+        claim_text="TotalEnergies TPI Management Quality assessment",
+        bucket="B",
+        tpi_evidence=_totalenergies_tpi_evidence(),
+    )
+    assert tag.overall_status == "tpi_data_fetched"
+    assert tag.overall_status != "verified"
+    assert tag.overall_status != "criteria_evidence_gathered"
+
+
+def test_bucket_b_criteria_evidence_still_returns_criteria_evidence_gathered():
+    """Regression: adding tpi_evidence must not break existing criteria_evidence behavior."""
+    tag = ClaimTag(
+        claim_id="tpi2",
+        claim_text="TSMC has a documented decarbonisation plan",
+        bucket="B",
+        criteria_evidence=[_sample_criterion_evidence()],
+    )
+    assert tag.overall_status == "criteria_evidence_gathered"
+
+
+def test_bucket_b_neither_evidence_type_returns_incomplete():
+    tag = ClaimTag(
+        claim_id="tpi3",
+        claim_text="unchecked Bucket B claim",
+        bucket="B",
+    )
+    assert tag.overall_status == "incomplete"
+
+
+def test_bucket_b_both_evidence_types_returns_conflicting_evidence_types():
+    """
+    Both fields populated on one ClaimTag is a bug: NZIF and TPI are separate
+    claims that must live on separate ClaimTags. This guard makes that bug
+    loud and named rather than silently hiding one evidence type behind the
+    other depending on which branch happens to run first.
+    """
+    tag = ClaimTag(
+        claim_id="tpi4",
+        claim_text="conflicting evidence bug",
+        bucket="B",
+        criteria_evidence=[_sample_criterion_evidence()],
+        tpi_evidence=_totalenergies_tpi_evidence(),
+    )
+    assert tag.overall_status == "conflicting_evidence_types"
 
 
 def test_bucket_c_requires_definitions_reconciled():
