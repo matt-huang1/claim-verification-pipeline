@@ -74,7 +74,15 @@ principle as page_fetch.py: fail at the granularity of the specific thing
 that failed, not the whole operation.
 
   Main fetch failure reasons (success=False):
-    "fetch_failed"                — network error, timeout, or non-200
+    "fetch_failed"                — network error, timeout, or non-200/non-404
+    "company_not_in_tpi_universe" — HTTP 404; the company is not present in
+                                    TPI's assessment universe at all (e.g.
+                                    privately held companies with no public
+                                    market capitalisation, confirmed for
+                                    Patagonia). This is a stable, meaningful
+                                    fact, not a transient failure to retry —
+                                    distinct from "fetch_failed", which covers
+                                    genuine network/timeout/server problems.
     "unexpected_indicator_count"  — parsed count != 23
     "unexpected_indicator_value"  — a class value other than yes/no found
 
@@ -307,6 +315,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
     Returns on success (indicator parse succeeded):
         {
             "success": True,
+            "company_tpi_id": str | None,
             "overall_level": int | None,
             "indicators": {1: "yes", ..., 23: "no"},
             "historical_levels": [(date_str, level_int), ...] | None,
@@ -329,7 +338,8 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
         }
 
     failure_reason values (main fetch):
-        "fetch_failed"                — network error, timeout, or non-200
+        "fetch_failed"                — network error, timeout, or non-200/non-404
+        "company_not_in_tpi_universe" — HTTP 404; company not in TPI's universe
         "unexpected_indicator_count"  — count of mq-answer divs != 23
         "unexpected_indicator_value"  — a class value other than yes/no found
 
@@ -340,6 +350,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
     def _fail(reason: str) -> dict:
         return {
             "success": False,
+            "company_tpi_id": None,
             "overall_level": None,
             "indicators": None,
             "historical_levels": None,
@@ -358,6 +369,8 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
     except requests.exceptions.RequestException:
         return _fail("fetch_failed")
 
+    if response.status_code == 404:
+        return _fail("company_not_in_tpi_universe")
     if response.status_code != 200:
         return _fail("fetch_failed")
 
@@ -406,6 +419,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
 
     return {
         "success": True,
+        "company_tpi_id": parser.company_id,
         "overall_level": parser.overall_level,
         "indicators": indicators,
         "historical_levels": historical_levels,

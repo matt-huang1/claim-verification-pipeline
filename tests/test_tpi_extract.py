@@ -115,6 +115,7 @@ def test_parse_confirmed_totalenergies_structure():
 
     assert result["success"] is True
     assert result["failure_reason"] is None
+    assert result["company_tpi_id"] is None  # no dropdown in fixture
     assert result["overall_level"] == 4
     assert result["historical_levels"] is None
     assert result["historical_fetch_failure_reason"] is None
@@ -153,15 +154,34 @@ def test_fetch_failure_timeout():
     assert result["failure_reason"] == "fetch_failed"
 
 
-def test_fetch_failure_non_200():
+def test_fetch_failure_non_200_non_404():
     with patch(
         "tpi_extract.requests.get",
-        return_value=_mock_response("<html></html>", status_code=404),
+        return_value=_mock_response("<html></html>", status_code=500),
     ):
         result = extract_tpi_management_quality("somecompany")
 
     assert result["success"] is False
     assert result["failure_reason"] == "fetch_failed"
+
+
+def test_company_not_in_tpi_universe_on_404():
+    """
+    A 404 from TPI's site means the company is not in TPI's assessment
+    universe — a stable, meaningful structural fact (confirmed for
+    Patagonia: privately held, no public market cap, genuine 404), not a
+    transient network failure. Conflating this with "fetch_failed" would
+    make Patagonia's evidence record indistinguishable from a temporary
+    network hiccup.
+    """
+    with patch(
+        "tpi_extract.requests.get",
+        return_value=_mock_response("<html></html>", status_code=404),
+    ):
+        result = extract_tpi_management_quality("patagonia")
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "company_not_in_tpi_universe"
 
 
 def test_wrong_indicator_count_returns_unexpected_indicator_count():
@@ -277,6 +297,7 @@ def test_chart_data_fetched_and_parsed_end_to_end():
 
     assert result["success"] is True
     assert result["failure_reason"] is None
+    assert result["company_tpi_id"] == _FAKE_COMPANY_ID
     assert result["historical_levels"] == [
         ("01/07/2017", 3),
         ("01/07/2018", 4),
@@ -374,6 +395,7 @@ def test_live_totalenergies_indicators_21_and_22_are_no():
     result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True, f"Live fetch failed: {result['failure_reason']}"
+    assert result["company_tpi_id"] == "1216"
 
     indicators = result["indicators"]
     assert indicators[21] == "no", "indicator 21 should be no (known fail)"
@@ -401,6 +423,7 @@ def test_live_totalenergies_historical_levels():
     result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True, f"Live fetch failed: {result['failure_reason']}"
+    assert result["company_tpi_id"] == "1216"
     assert (
         result["historical_fetch_failure_reason"] is None
     ), f"Historical fetch failed: {result['historical_fetch_failure_reason']}"
@@ -417,3 +440,22 @@ def test_live_totalenergies_historical_levels():
 
     assert result["max_level"] == 5
     assert result["current_level_date"] == "15/12/2025"
+
+
+@pytest.mark.live_api
+@pytest.mark.skipif(
+    not os.getenv("RUN_LIVE_API"),
+    reason="live API test; set RUN_LIVE_API=1 to run deliberately",
+)
+def test_live_patagonia_not_in_tpi_universe():
+    """
+    Patagonia is privately held with no public market capitalisation and
+    returns a real 404 from TPI's site — confirmed directly in browser before
+    this test was written. This is a stable structural fact (not a transient
+    network problem): privately held companies are outside TPI's assessment
+    universe by design.
+    """
+    result = extract_tpi_management_quality("patagonia")
+
+    assert result["success"] is False
+    assert result["failure_reason"] == "company_not_in_tpi_universe"
