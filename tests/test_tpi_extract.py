@@ -249,12 +249,14 @@ def test_dropdown_options_parse_date_and_id_correctly():
 def test_parse_chart_response_extracts_level_series_and_max_level():
     """
     _parse_chart_response correctly maps the "Level" series to
-    (date_str, int) tuples and reads max_level from "Max Level".
+    (date_str, int) tuples, reads current_level_entry from "Current Level",
+    and reads max_level from "Max Level".
     """
     data = _fake_chart_data()
-    historical, max_level = _parse_chart_response(data)
+    historical, current_entry, max_level = _parse_chart_response(data)
 
     assert historical == [("01/07/2017", 3), ("01/07/2018", 4), ("15/12/2024", 5)]
+    assert current_entry == ("15/12/2025", 5)
     assert max_level == 5
 
 
@@ -280,8 +282,38 @@ def test_chart_data_fetched_and_parsed_end_to_end():
         ("01/07/2018", 4),
         ("15/12/2024", 5),
     ]
+    assert result["current_level_date"] == "15/12/2025"
     assert result["max_level"] == 5
     assert result["historical_fetch_failure_reason"] is None
+
+
+def test_missing_current_level_series_does_not_affect_historical_or_max():
+    """
+    A chart response with no "Current Level" entry returns current_level_date=None
+    without disturbing historical_levels or max_level — failing precisely, not
+    uniformly.
+    """
+    chart_without_current = [
+        s for s in _fake_chart_data() if s["name"] != "Current Level"
+    ]
+    html = _build_html(_totalenergies_indicators(), include_dropdown=True)
+    with patch(
+        "tpi_extract.requests.get",
+        side_effect=[
+            _mock_response(html),
+            _mock_json_response(chart_without_current),
+        ],
+    ):
+        result = extract_tpi_management_quality("totalenergies")
+
+    assert result["success"] is True
+    assert result["historical_levels"] == [
+        ("01/07/2017", 3),
+        ("01/07/2018", 4),
+        ("15/12/2024", 5),
+    ]
+    assert result["current_level_date"] is None
+    assert result["max_level"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -384,3 +416,4 @@ def test_live_totalenergies_historical_levels():
     assert any("2024" in d for d in level_5_dates), "expected a 2024 entry at level 5"
 
     assert result["max_level"] == 5
+    assert result["current_level_date"] == "15/12/2025"

@@ -243,20 +243,27 @@ class _MQParser(HTMLParser):
 
 def _parse_chart_response(
     data: list,
-) -> tuple[list[tuple[str, int]] | None, int | None]:
+) -> tuple[list[tuple[str, int]] | None, tuple[str, int] | None, int | None]:
     """
-    Extract (historical_levels, max_level) from the chart endpoint's JSON body.
+    Extract (historical_levels, current_level_entry, max_level) from the chart
+    endpoint's JSON body.
 
     Expected shape (confirmed 2026-06-28):
         [
           {"name": "Level",         "data": [["01/07/2017", 3], ...]},
-          {"name": "Current Level", "data": [[...]]},
+          {"name": "Current Level", "data": [["01/12/2024", 5]]},
           {"name": "Max Level",     "data": 5},
         ]
 
-    Returns (None, None) if the expected series are absent or malformed.
+    current_level_entry is the single (date_str, level_int) pair from the
+    "Current Level" series — the date of the most recent assessment and the
+    level it produced. The real response's "Current Level" data is a list with
+    exactly one entry.
+
+    Returns (None, None, None) if the expected series are absent or malformed.
     """
     historical: list[tuple[str, int]] | None = None
+    current_level_entry: tuple[str, int] | None = None
     max_level: int | None = None
     for series in data:
         name = series.get("name")
@@ -266,9 +273,15 @@ def _parse_chart_response(
                 historical = [(row[0], int(row[1])) for row in raw if len(row) >= 2]
             except (TypeError, ValueError, IndexError):
                 historical = None
+        elif name == "Current Level" and isinstance(raw, list) and raw:
+            try:
+                row = raw[0]
+                current_level_entry = (row[0], int(row[1]))
+            except (TypeError, ValueError, IndexError):
+                current_level_entry = None
         elif name == "Max Level" and isinstance(raw, (int, float)):
             max_level = int(raw)
-    return historical, max_level
+    return historical, current_level_entry, max_level
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +310,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
             "overall_level": int | None,
             "indicators": {1: "yes", ..., 23: "no"},
             "historical_levels": [(date_str, level_int), ...] | None,
+            "current_level_date": str | None,
             "max_level": int | None,
             "failure_reason": None,
             "historical_fetch_failure_reason": str | None,
@@ -308,6 +322,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
             "overall_level": None,
             "indicators": None,
             "historical_levels": None,
+            "current_level_date": None,
             "max_level": None,
             "failure_reason": str,
             "historical_fetch_failure_reason": None,
@@ -328,6 +343,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
             "overall_level": None,
             "indicators": None,
             "historical_levels": None,
+            "current_level_date": None,
             "max_level": None,
             "failure_reason": reason,
             "historical_fetch_failure_reason": None,
@@ -363,6 +379,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
     # Only attempted when the first fetch found a company ID and assessment list.
     # Failure here is isolated: indicator results are preserved.
     historical_levels: list[tuple[str, int]] | None = None
+    current_level_date: str | None = None
     max_level: int | None = None
     historical_fail: str | None = None
 
@@ -379,7 +396,11 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
                 historical_fail = "historical_fetch_failed"
             else:
                 chart_data = json.loads(chart_resp.content.decode("utf-8"))
-                historical_levels, max_level = _parse_chart_response(chart_data)
+                historical_levels, current_entry, max_level = _parse_chart_response(
+                    chart_data
+                )
+                if current_entry is not None:
+                    current_level_date = current_entry[0]
         except Exception:
             historical_fail = "historical_fetch_failed"
 
@@ -388,6 +409,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
         "overall_level": parser.overall_level,
         "indicators": indicators,
         "historical_levels": historical_levels,
+        "current_level_date": current_level_date,
         "max_level": max_level,
         "failure_reason": None,
         "historical_fetch_failure_reason": historical_fail,
