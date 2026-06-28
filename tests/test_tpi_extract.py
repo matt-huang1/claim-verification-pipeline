@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, patch
 from tpi_extract import (
     extract_tpi_management_quality,
     build_tpi_evidence,
+    build_tpi_claim_tag,
+    fetch_and_tag_tpi_evidence,
     _parse_chart_response,
 )
 
@@ -463,6 +465,80 @@ def test_build_tpi_evidence_succeeds_when_historical_fetch_fails():
 
 
 # ---------------------------------------------------------------------------
+# Tests for build_tpi_claim_tag and fetch_and_tag_tpi_evidence
+# ---------------------------------------------------------------------------
+
+
+def _fake_tpi_evidence():
+    """Hand-built fake evidence — no fetch needed."""
+    from tag_schema import TPIManagementQualityEvidence
+
+    indicators = {i: "yes" for i in range(1, 24)}
+    indicators[21] = "no"
+    indicators[22] = "no"
+    return TPIManagementQualityEvidence(
+        company_tpi_id="1216",
+        company_slug="totalenergies",
+        overall_level=5,
+        current_level_date="15/12/2025",
+        indicator_results=indicators,
+        historical_levels=[("01/07/2017", 3), ("01/12/2024", 5)],
+        max_level=5,
+    )
+
+
+def test_build_tpi_claim_tag_assembles_correct_tag():
+    """
+    Pure assembly: no fetch. Confirms build_tpi_claim_tag and tag_schema's
+    overall_status logic compose correctly — the tag must report
+    "tpi_data_fetched", not "incomplete" or any other status.
+    """
+    ev = _fake_tpi_evidence()
+    tag = build_tpi_claim_tag("claim-te-tpi", "totalenergies", ev)
+
+    assert tag.claim_id == "claim-te-tpi"
+    assert tag.claim_text == "totalenergies TPI Management Quality assessment"
+    assert tag.bucket == "B"
+    assert tag.tpi_evidence is ev
+    assert tag.overall_status == "tpi_data_fetched"
+
+
+def test_fetch_and_tag_tpi_evidence_success():
+    html = _build_html(_totalenergies_indicators(), include_dropdown=True)
+    with patch(
+        "tpi_extract.requests.get",
+        side_effect=[
+            _mock_response(html),
+            _mock_json_response(_fake_chart_data()),
+        ],
+    ):
+        result = fetch_and_tag_tpi_evidence("claim-te-tpi", "totalenergies")
+
+    assert result["success"] is True
+    assert result["failure_reason"] is None
+    tag = result["tag"]
+    assert tag.overall_status == "tpi_data_fetched"
+    assert tag.tpi_evidence.indicator_results[21] == "no"
+
+
+def test_fetch_and_tag_tpi_evidence_company_not_in_universe():
+    """
+    Patagonia-style failure: success=False, no tag constructed, failure_reason
+    passes through unchanged. A silent default tag for a company with no real
+    evidence would be worse than a clean, honest "no tag, here's exactly why."
+    """
+    with patch(
+        "tpi_extract.requests.get",
+        return_value=_mock_response("<html></html>", status_code=404),
+    ):
+        result = fetch_and_tag_tpi_evidence("claim-patagonia-tpi", "patagonia")
+
+    assert result["success"] is False
+    assert result["tag"] is None
+    assert result["failure_reason"] == "company_not_in_tpi_universe"
+
+
+# ---------------------------------------------------------------------------
 # Live tests
 # ---------------------------------------------------------------------------
 
@@ -576,3 +652,42 @@ def test_live_build_tpi_evidence_totalenergies():
     )
     assert ev.historical_levels is not None
     assert ev.max_level == 5
+
+
+@pytest.mark.live_api
+@pytest.mark.skipif(
+    not os.getenv("RUN_LIVE_API"),
+    reason="live API test; set RUN_LIVE_API=1 to run deliberately",
+)
+def test_live_fetch_and_tag_tpi_evidence_totalenergies():
+    """
+    Full end-to-end for TotalEnergies: real HTTP fetches produce a ClaimTag
+    with tpi_data_fetched status and the confirmed known field values.
+    """
+    result = fetch_and_tag_tpi_evidence("claim-totalenergies-tpi", "totalenergies")
+
+    assert result["success"] is True, f"Failed: {result['failure_reason']}"
+    tag = result["tag"]
+    assert tag.overall_status == "tpi_data_fetched"
+    assert tag.tpi_evidence.company_tpi_id == "1216"
+    assert tag.tpi_evidence.overall_level == 5
+    assert tag.tpi_evidence.indicator_results[21] == "no"
+    assert tag.tpi_evidence.indicator_results[22] == "no"
+
+
+@pytest.mark.live_api
+@pytest.mark.skipif(
+    not os.getenv("RUN_LIVE_API"),
+    reason="live API test; set RUN_LIVE_API=1 to run deliberately",
+)
+def test_live_fetch_and_tag_tpi_evidence_patagonia_not_in_universe():
+    """
+    End-to-end confirmation that Patagonia's structural absence is correctly
+    represented: real HTTP 404 → "company_not_in_tpi_universe", no tag
+    silently constructed, success=False. The full honest chain, not a guess.
+    """
+    result = fetch_and_tag_tpi_evidence("claim-patagonia-tpi", "patagonia")
+
+    assert result["success"] is False
+    assert result["tag"] is None
+    assert result["failure_reason"] == "company_not_in_tpi_universe"

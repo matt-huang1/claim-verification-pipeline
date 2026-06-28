@@ -480,3 +480,45 @@ def build_tpi_evidence(company_slug: str) -> dict:
         max_level=raw["max_level"],
     )
     return {"success": True, "evidence": evidence, "failure_reason": None}
+
+
+def build_tpi_claim_tag(claim_id: str, company_slug: str, evidence):
+    """
+    Pure assembly: wrap a TPIManagementQualityEvidence in a ClaimTag.
+    No fetching; mirrors pipeline.py's build_bucket_a_tag pattern.
+
+    Args:
+        evidence: TPIManagementQualityEvidence instance from build_tpi_evidence.
+
+    Returns:
+        ClaimTag with bucket="B" and tpi_evidence set.
+    """
+    from tag_schema import ClaimTag
+
+    return ClaimTag(
+        claim_id=claim_id,
+        claim_text=f"{company_slug} TPI Management Quality assessment",
+        bucket="B",
+        tpi_evidence=evidence,
+    )
+
+
+def fetch_and_tag_tpi_evidence(claim_id: str, company_slug: str) -> dict:
+    """
+    Convenience wrapper: fetch evidence then build a ClaimTag in one call.
+    Mirrors verify_bucket_a_claim in pipeline.py — the "recipe" that sequences
+    the fetch and assembly steps a caller would otherwise write themselves.
+
+    Returns:
+        {"success": True,  "tag": ClaimTag, "failure_reason": None}
+        {"success": False, "tag": None,     "failure_reason": str}
+    """
+    result = build_tpi_evidence(company_slug)
+    if not result["success"]:
+        return {
+            "success": False,
+            "tag": None,
+            "failure_reason": result["failure_reason"],
+        }
+    tag = build_tpi_claim_tag(claim_id, company_slug, result["evidence"])
+    return {"success": True, "tag": tag, "failure_reason": None}
