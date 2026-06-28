@@ -13,7 +13,11 @@ import pytest
 import requests
 from unittest.mock import MagicMock, patch
 
-from tpi_extract import extract_tpi_management_quality, _parse_chart_response
+from tpi_extract import (
+    extract_tpi_management_quality,
+    build_tpi_evidence,
+    _parse_chart_response,
+)
 
 # ---------------------------------------------------------------------------
 # HTML fixture helpers
@@ -374,6 +378,91 @@ def test_historical_fetch_failure_preserves_indicator_results():
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tests for build_tpi_evidence
+# ---------------------------------------------------------------------------
+
+
+def test_build_tpi_evidence_success_maps_fields_correctly():
+    """
+    A successful extract result produces a real TPIManagementQualityEvidence
+    with all fields correctly mapped. Asserts specific values, not just
+    "is not None", to catch field-name mismatches (e.g. "indicators" →
+    "indicator_results") silently mapping the wrong data.
+    """
+    html = _build_html(_totalenergies_indicators(), include_dropdown=True)
+    with patch(
+        "tpi_extract.requests.get",
+        side_effect=[
+            _mock_response(html),
+            _mock_json_response(_fake_chart_data()),
+        ],
+    ):
+        result = build_tpi_evidence("totalenergies")
+
+    assert result["success"] is True
+    assert result["failure_reason"] is None
+
+    ev = result["evidence"]
+    assert ev.company_slug == "totalenergies"
+    assert ev.company_tpi_id == _FAKE_COMPANY_ID
+    assert ev.overall_level == 4
+    assert ev.current_level_date == "15/12/2025"
+    assert ev.indicator_results[21] == "no"
+    assert ev.indicator_results[22] == "no"
+    assert ev.indicator_results[1] == "yes"
+    assert ev.historical_levels == [
+        ("01/07/2017", 3),
+        ("01/07/2018", 4),
+        ("15/12/2024", 5),
+    ]
+    assert ev.max_level == 5
+
+
+def test_build_tpi_evidence_passes_through_company_not_in_tpi_universe():
+    """
+    When extract_tpi_management_quality returns "company_not_in_tpi_universe"
+    (the Patagonia case), build_tpi_evidence surfaces it unchanged — not
+    silently converted into a generic failure.
+    """
+    with patch(
+        "tpi_extract.requests.get",
+        return_value=_mock_response("<html></html>", status_code=404),
+    ):
+        result = build_tpi_evidence("patagonia")
+
+    assert result["success"] is False
+    assert result["evidence"] is None
+    assert result["failure_reason"] == "company_not_in_tpi_universe"
+
+
+def test_build_tpi_evidence_succeeds_when_historical_fetch_fails():
+    """
+    A historical-fetch failure does not block evidence construction for the
+    successful indicator data. evidence.historical_levels is None (honest
+    absence), not an empty list — same distinction already enforced in the
+    raw result.
+    """
+    html = _build_html(_totalenergies_indicators(), include_dropdown=True)
+    with patch(
+        "tpi_extract.requests.get",
+        side_effect=[
+            _mock_response(html),
+            _mock_response(b"", status_code=503),
+        ],
+    ):
+        result = build_tpi_evidence("totalenergies")
+
+    assert result["success"] is True
+    assert result["failure_reason"] is None
+
+    ev = result["evidence"]
+    assert ev.indicator_results[21] == "no"
+    assert ev.historical_levels is None
+    assert ev.max_level is None
+
+
+# ---------------------------------------------------------------------------
 # Live tests
 # ---------------------------------------------------------------------------
 
@@ -459,3 +548,31 @@ def test_live_patagonia_not_in_tpi_universe():
 
     assert result["success"] is False
     assert result["failure_reason"] == "company_not_in_tpi_universe"
+
+
+@pytest.mark.live_api
+@pytest.mark.skipif(
+    not os.getenv("RUN_LIVE_API"),
+    reason="live API test; set RUN_LIVE_API=1 to run deliberately",
+)
+def test_live_build_tpi_evidence_totalenergies():
+    """
+    Build real TPIManagementQualityEvidence for TotalEnergies and assert
+    the known, confirmed field values: Level 5, indicators 21/22 as "no",
+    company_tpi_id "1216".
+    """
+    result = build_tpi_evidence("totalenergies")
+
+    assert result["success"] is True, f"Failed: {result['failure_reason']}"
+
+    ev = result["evidence"]
+    assert ev.company_tpi_id == "1216"
+    assert ev.company_slug == "totalenergies"
+    assert ev.overall_level == 5
+    assert ev.indicator_results[21] == "no"
+    assert ev.indicator_results[22] == "no"
+    assert all(
+        ev.indicator_results[i] == "yes" for i in range(1, 24) if i not in (21, 22)
+    )
+    assert ev.historical_levels is not None
+    assert ev.max_level == 5

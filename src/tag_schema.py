@@ -199,13 +199,13 @@ class TPIManagementQualityEvidence:
     already done by hand in the real RBC analysis this project supports.
     """
 
-    company_tpi_id: str
+    company_tpi_id: str | None  # None if TPI's dropdown was absent from the page
     company_slug: str
-    overall_level: int
+    overall_level: int | None  # None if "Current level" text not found on page
     current_level_date: str | None
     indicator_results: dict[int, str]
-    historical_levels: list[tuple[str, int]]
-    max_level: int
+    historical_levels: list[tuple[str, int]] | None  # None if historical fetch failed
+    max_level: int | None  # None if historical fetch failed
 
 
 @dataclass(frozen=True)

@@ -428,3 +428,55 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
         "failure_reason": None,
         "historical_fetch_failure_reason": historical_fail,
     }
+
+
+def build_tpi_evidence(company_slug: str) -> dict:
+    """
+    Call extract_tpi_management_quality and, on success, assemble a real
+    TPIManagementQualityEvidence instance from the raw result.
+
+    Kept in this module rather than a separate file because this is a thin,
+    direct wrapper specific to extract_tpi_management_quality's own output
+    shape — not an independently reusable operation the way page_fetch.py or
+    url_compare.py are. The assembly logic only makes sense here, alongside
+    the function whose dict it wraps.
+
+    If the main fetch succeeds but historical data failed (historical_fetch_
+    failure_reason is set), evidence is still built and returned with
+    historical_levels=None — same "fail precisely, not uniformly" principle
+    already established for this module. A secondary-fetch hiccup does not
+    block construction of real, verified indicator data.
+
+    Args:
+        company_slug: the URL slug used by TPI, e.g. "totalenergies".
+
+    Returns:
+        {"success": True,  "evidence": TPIManagementQualityEvidence, "failure_reason": None}
+        {"success": False, "evidence": None, "failure_reason": str}
+
+    failure_reason passes through extract_tpi_management_quality's own values
+    directly, including "company_not_in_tpi_universe" (a valid, meaningful
+    result a caller can act on, e.g. to record that Patagonia is outside
+    TPI's assessment universe by design).
+    """
+    from tag_schema import TPIManagementQualityEvidence
+
+    raw = extract_tpi_management_quality(company_slug)
+
+    if not raw["success"]:
+        return {
+            "success": False,
+            "evidence": None,
+            "failure_reason": raw["failure_reason"],
+        }
+
+    evidence = TPIManagementQualityEvidence(
+        company_tpi_id=raw["company_tpi_id"],
+        company_slug=company_slug,
+        overall_level=raw["overall_level"],
+        current_level_date=raw["current_level_date"],
+        indicator_results=raw["indicators"],
+        historical_levels=raw["historical_levels"],
+        max_level=raw["max_level"],
+    )
+    return {"success": True, "evidence": evidence, "failure_reason": None}
