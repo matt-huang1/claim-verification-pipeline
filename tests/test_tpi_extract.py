@@ -8,6 +8,8 @@ That known result was independently cross-checked against an RBC analyst
 document before this module was written.
 """
 
+import os
+
 import pytest
 import requests
 from unittest.mock import MagicMock, patch
@@ -152,6 +154,10 @@ def test_overall_level_none_when_not_in_page():
 
 
 @pytest.mark.live_api
+@pytest.mark.skipif(
+    not os.getenv("RUN_LIVE_API"),
+    reason="live API test; set RUN_LIVE_API=1 to run deliberately",
+)
 def test_live_totalenergies_indicators_21_and_22_are_no():
     """
     Fetch the real TPI page for TotalEnergies and assert the known result:
