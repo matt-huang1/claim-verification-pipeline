@@ -209,6 +209,61 @@ class TPIManagementQualityEvidence:
 
 
 @dataclass(frozen=True)
+class SourceFinding:
+    """
+    Per-source extraction result for Bucket C verification.
+
+    Captures what one already-fetched source says about the claim: a claimed
+    value (if the source states one) and a stated definition of scope (if the
+    source defines its market boundary or category). Both fields are
+    independently verified via quote_match — the model's proposal is never
+    trusted on its word alone.
+
+    Fields:
+        source_url:   URL of the page this finding came from.
+        source_type:  "official" (company's own domain) or "third_party"
+                      (analyst report, news article, etc.). For Bucket C
+                      claims, third_party sources are equally valid — the
+                      distinction exists so a human reviewer can see the
+                      provenance mix across sources at a glance.
+        value_found:  True if the model found a claimed value in the source.
+        claimed_value: The verbatim text of the value as it appears in the
+                      source, or None if value_found is False.
+        is_literal_value: True if the claimed value is expressed as a literal
+                      digit or percentage (e.g. "60%", "3.2 billion"). False
+                      if it appears as a word-stated approximation ("roughly
+                      half") or qualitative description ("dominant share").
+                      False — not None — when value_found is False: a missing
+                      value has no form, so False is the honest, non-nullable
+                      answer, not a sentinel None that would require callers to
+                      special-case it separately from the value_found flag they
+                      already have. The same principle as CriterionEvidence's
+                      no-verdict design: don't introduce a second, parallel way
+                      to say "not applicable" when one boolean already
+                      communicates it unambiguously.
+        value_verification_status: The quote_match status for claimed_value,
+                      or None if value_found is False (verification was never
+                      attempted on a value the model never claimed to have).
+        definition_found: True if the model found a stated definition or scope
+                      description in the source.
+        definition_text: The verbatim definition text as it appears in the
+                      source, or None if definition_found is False.
+        definition_verification_status: The quote_match status for
+                      definition_text, or None if definition_found is False.
+    """
+
+    source_url: str
+    source_type: str  # "official" | "third_party"
+    value_found: bool
+    claimed_value: str | None
+    is_literal_value: bool
+    value_verification_status: str | None
+    definition_found: bool
+    definition_text: str | None
+    definition_verification_status: str | None
+
+
+@dataclass(frozen=True)
 class SourcePluralityEvidence:
     """
     Placeholder for Bucket C verification: source plurality plus explicit
