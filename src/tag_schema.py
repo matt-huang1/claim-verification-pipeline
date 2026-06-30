@@ -264,17 +264,77 @@ class SourceFinding:
 
 
 @dataclass(frozen=True)
+class DefinitionGroup:
+    """
+    Two or more sources judged to share an underlying real-world scope,
+    regardless of how differently they word their definition.
+
+    len(member_source_urls) >= 2 is enforced by reconciliation.py's
+    validation step — a group with one member is a malformed LLM response,
+    not a legitimate outcome.
+    """
+
+    member_source_urls: list[str]
+    shared_definition_label: str  # human-readable, model-stated
+    reasoning: str  # required, never empty
+
+
+@dataclass(frozen=True)
+class DistinctFinding:
+    """
+    A source confidently judged to use its own, different definition —
+    one that cannot be grouped with any other source in this call.
+    """
+
+    source_url: str
+    reasoning: str  # required, never empty
+
+
+@dataclass(frozen=True)
+class UnresolvedFinding:
+    """
+    A source whose relationship to the others could not be confidently
+    determined. This is a genuine judgment outcome, not a catch-all for
+    parsing or formatting failures. A source that states something
+    definitional but too vaguely to confidently place goes here; a source
+    for which the LLM response was malformed goes into failed_reconciliation
+    on SourcePluralityEvidence — these are distinct, never merged.
+    """
+
+    source_url: str
+    reasoning: str  # required, never empty
+
+
+@dataclass(frozen=True)
 class SourcePluralityEvidence:
     """
-    Placeholder for Bucket C verification: source plurality plus explicit
-    disambiguation of which definition is in use (e.g. "foundry market
-    share" vs "pure foundry market share"). No upstream check populates
-    this evidence type yet (the Bucket B/C/D checks themselves are not
-    built). The tag-layer logic here is complete and tested.
+    Bucket C verification record.
+
+    Every SourceFinding that entered reconciliation ends up in exactly one
+    of five places — groups, distinct_sources, unresolved,
+    no_definition_sources, or failed_reconciliation — never dropped, never
+    silently merged. The split is:
+
+        no_definition_sources  — sources with definition_found=False
+                                 (deterministic, no LLM involved)
+        groups                 — 2+ sources sharing a real-world scope
+        distinct_sources       — sources confidently using a different scope
+        unresolved             — sources where the relationship was unclear
+        failed_reconciliation  — sources sent to the LLM but never got a
+                                 usable verdict after retries exhausted;
+                                 distinct from "unresolved" (which is a
+                                 genuine judgment outcome) — this is a
+                                 processing failure, not a judgment
+
+    notes is supplementary only — never the sole place a finding is recorded.
     """
 
     sources_checked: int
-    definitions_reconciled: bool
+    groups: list[DefinitionGroup]
+    distinct_sources: list[DistinctFinding]
+    unresolved: list[UnresolvedFinding]
+    no_definition_sources: list[str]  # source_urls with definition_found=False
+    failed_reconciliation: list[str]  # source_urls with no usable LLM verdict
     notes: str
 
 
@@ -376,18 +436,17 @@ class ClaimTag:
         if self.bucket == "C":
             if self.source_plurality_evidence is None:
                 return "incomplete"
-            if not self.source_plurality_evidence.definitions_reconciled:
-                return "definitional_ambiguity_unresolved"
-            # NOT "verified" - Bucket C claims have no single authoritative
-            # source to check against, by definition. Reconciling multiple
-            # sources and disambiguating which definition is in use makes
-            # the claim honestly presented, not verified against ground
-            # truth the way Bucket A is. Using "verified" here would
-            # flatten exactly the distinction Bucket D's
-            # "assumptions_explicit" label exists to preserve, for the same
-            # structural reason: found via review, this was an
-            # inconsistency in the first version of this property.
-            return "disambiguated"
+            if len(self.source_plurality_evidence.groups) >= 1:
+                # At least one real group (2+ sources sharing a scope) was
+                # established. Partial LLM failures (failed_reconciliation)
+                # on other sources do not invalidate a real, independently-
+                # established group.
+                # NOT "verified" — Bucket C has no single authoritative
+                # source by definition. A real group makes the claim honestly
+                # presented, not verified against ground truth the way
+                # Bucket A is.
+                return "disambiguated"
+            return "definitional_ambiguity_unresolved"
 
         if self.bucket == "D":
             if self.assumptions_evidence is None:

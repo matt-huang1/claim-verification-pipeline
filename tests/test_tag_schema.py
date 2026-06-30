@@ -12,6 +12,8 @@ from tag_schema import (
     AssumptionsStatedEvidence,
     ClaimTag,
     CriterionEvidence,
+    DefinitionGroup,
+    DistinctFinding,
     DomainCheckEvidence,
     QuoteMatchEvidence,
     SourcePluralityEvidence,
@@ -300,42 +302,130 @@ def test_bucket_b_both_evidence_types_returns_conflicting_evidence_types():
     assert tag.overall_status == "conflicting_evidence_types"
 
 
-def test_bucket_c_requires_definitions_reconciled():
+def _empty_spe(**kwargs):
+    """Minimal SourcePluralityEvidence with all lists empty."""
+    defaults = dict(
+        sources_checked=0,
+        groups=[],
+        distinct_sources=[],
+        unresolved=[],
+        no_definition_sources=[],
+        failed_reconciliation=[],
+        notes="",
+    )
+    defaults.update(kwargs)
+    return SourcePluralityEvidence(**defaults)
+
+
+def test_bucket_c_no_group_is_definitional_ambiguity_unresolved():
+    """No real group established — at least two sources but none agree."""
     tag = ClaimTag(
         claim_id="c10",
         claim_text="foundry market share",
         bucket="C",
-        source_plurality_evidence=SourcePluralityEvidence(
+        source_plurality_evidence=_empty_spe(
             sources_checked=2,
-            definitions_reconciled=False,
+            distinct_sources=[
+                DistinctFinding(
+                    source_url="https://trendforce.com/report",
+                    reasoning="uses pure-play definition",
+                ),
+                DistinctFinding(
+                    source_url="https://counterpoint.com/report",
+                    reasoning="includes IDM captive capacity",
+                ),
+            ],
             notes="TrendForce vs Counterpoint, category mismatch unresolved",
         ),
     )
     assert tag.overall_status == "definitional_ambiguity_unresolved"
 
 
-def test_bucket_c_reconciled_is_disambiguated_not_verified():
+def test_bucket_c_real_group_is_disambiguated_not_verified():
     """
     Found via review: the first version of this property returned
     "verified" for Bucket C once definitions were reconciled, which
     flattens the exact distinction Bucket D's "assumptions_explicit"
     label exists to preserve, for the same structural reason. Bucket C
     has no single authoritative source to check against by definition
-    (that's why it isn't Bucket A) - reconciling multiple sources makes
-    a claim honestly presented, not verified against ground truth.
+    (that's why it isn't Bucket A) — reconciling multiple sources into a
+    real group makes a claim honestly presented, not verified against
+    ground truth.
     """
     tag = ClaimTag(
         claim_id="c10b",
         claim_text="foundry market share, reconciled",
         bucket="C",
-        source_plurality_evidence=SourcePluralityEvidence(
+        source_plurality_evidence=_empty_spe(
             sources_checked=2,
-            definitions_reconciled=True,
-            notes="both sources confirmed to use the same 'foundry' definition",
+            groups=[
+                DefinitionGroup(
+                    member_source_urls=[
+                        "https://trendforce.com/report",
+                        "https://counterpoint.com/report",
+                    ],
+                    shared_definition_label="pure-play foundry (excl. IDM captive)",
+                    reasoning="both explicitly exclude IDM in-house fab capacity",
+                )
+            ],
+            notes="both sources confirmed to use the same foundry definition",
         ),
     )
     assert tag.overall_status == "disambiguated"
     assert tag.overall_status != "verified"
+
+
+def test_bucket_c_all_distinct_no_group_is_definitional_ambiguity_unresolved():
+    """
+    Every source is confidently distinct from every other — no pair shares
+    a definition. groups is empty, so no disambiguation was achieved.
+    """
+    tag = ClaimTag(
+        claim_id="c10c",
+        claim_text="foundry market share",
+        bucket="C",
+        source_plurality_evidence=_empty_spe(
+            sources_checked=3,
+            distinct_sources=[
+                DistinctFinding(source_url="https://a.com", reasoning="pure-play only"),
+                DistinctFinding(source_url="https://b.com", reasoning="includes IDMs"),
+                DistinctFinding(
+                    source_url="https://c.com", reasoning="wafer capacity basis"
+                ),
+            ],
+        ),
+    )
+    assert tag.overall_status == "definitional_ambiguity_unresolved"
+
+
+def test_bucket_c_real_group_plus_failed_reconciliation_is_still_disambiguated():
+    """
+    A partial LLM failure (some sources in failed_reconciliation) does not
+    invalidate a real group established from the other sources. If at least
+    one group exists, the outcome is "disambiguated" regardless of what
+    failed_reconciliation contains.
+    """
+    tag = ClaimTag(
+        claim_id="c10d",
+        claim_text="foundry market share",
+        bucket="C",
+        source_plurality_evidence=_empty_spe(
+            sources_checked=3,
+            groups=[
+                DefinitionGroup(
+                    member_source_urls=[
+                        "https://trendforce.com/report",
+                        "https://counterpoint.com/report",
+                    ],
+                    shared_definition_label="pure-play foundry",
+                    reasoning="both exclude IDM captive capacity",
+                )
+            ],
+            failed_reconciliation=["https://idc.com/report"],
+            notes="IDC could not be reconciled after retries",
+        ),
+    )
+    assert tag.overall_status == "disambiguated"
 
 
 def test_bucket_d_never_returns_verified_even_when_fully_checked():
