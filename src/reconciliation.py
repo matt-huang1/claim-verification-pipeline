@@ -55,9 +55,11 @@ WHY THE WHOLE RESPONSE IS INVALIDATED ON ANY DEFECT:
 
 import json
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
+from log_utils import append_log_entry
 from tag_schema import (
     DefinitionGroup,
     DistinctFinding,
@@ -302,16 +304,28 @@ def _build_evidence(
 def reconcile_sources(
     claim_text: str,
     findings: list[SourceFinding],
+    *,
+    company_name: str,
     llm_fn=None,
+    log_dir: str = "logs",
 ) -> SourcePluralityEvidence:
     """
     Reconcile definition-bearing SourceFindings and return a
     SourcePluralityEvidence that accounts for every input source exactly once.
 
+    `company_name` is a required keyword-only parameter, never inferred from
+    claim_text or finding content. An incorrect company name at the call site
+    is visible; a silently misparsed one would corrupt every log entry without
+    producing any failure signal — the same principle as extraction.py and
+    bucket_b_pipeline.py.
+
     `llm_fn`, if provided, replaces the real OpenAI call. Signature:
         (claim_text: str, findings: list[dict], feedback: str | None) -> dict
     returning {"groups": [...], "distinct": [...], "unresolved": [...]}.
     feedback is None on the first call.
+
+    Appends exactly one structured log entry to log_dir/evaluation_log.jsonl
+    after the result is fully built.
     """
     _llm_fn = llm_fn or _default_llm_call
 
@@ -321,8 +335,12 @@ def reconcile_sources(
     no_def_urls = [f.source_url for f in findings if not f.definition_found]
     candidates = [f for f in findings if f.definition_found]
 
+    outcome: str
+    attempts_made: int
+    result: SourcePluralityEvidence
+
     if len(candidates) == 0:
-        return SourcePluralityEvidence(
+        result = SourcePluralityEvidence(
             sources_checked=sources_checked,
             groups=[],
             distinct_sources=[],
@@ -331,9 +349,11 @@ def reconcile_sources(
             failed_reconciliation=[],
             notes="No sources had a stated definition.",
         )
+        outcome = "no_definitions"
+        attempts_made = 0
 
-    if len(candidates) == 1:
-        return SourcePluralityEvidence(
+    elif len(candidates) == 1:
+        result = SourcePluralityEvidence(
             sources_checked=sources_checked,
             groups=[],
             distinct_sources=[
@@ -347,46 +367,75 @@ def reconcile_sources(
             failed_reconciliation=[],
             notes="",
         )
+        outcome = "sole_source"
+        attempts_made = 0
 
-    # --- Step 2 + 3: LLM call with validation + one retry ---
-    candidate_dicts = [
-        {
-            "source_url": f.source_url,
-            "claimed_value": f.claimed_value,
-            "definition_text": f.definition_text,
-        }
-        for f in candidates
-    ]
-    expected_urls = {f.source_url for f in candidates}
+    else:
+        # --- Step 2 + 3: LLM call with validation + one retry ---
+        candidate_dicts = [
+            {
+                "source_url": f.source_url,
+                "claimed_value": f.claimed_value,
+                "definition_text": f.definition_text,
+            }
+            for f in candidates
+        ]
+        expected_urls = {f.source_url for f in candidates}
 
-    feedback: str | None = None
+        feedback: str | None = None
+        result = None  # type: ignore[assignment]
+        outcome = "failed"
+        attempts_made = 0
 
-    for attempt in range(1, _MAX_RECONCILIATION_ATTEMPTS + 1):
-        try:
-            raw = _llm_fn(claim_text, candidate_dicts, feedback)
-            if not isinstance(raw, dict):
-                raise ValueError("response must be a dict")
-        except Exception:
-            feedback = _MALFORMED_JSON_FEEDBACK
+        for attempt in range(1, _MAX_RECONCILIATION_ATTEMPTS + 1):
+            attempts_made = attempt
+            try:
+                raw = _llm_fn(claim_text, candidate_dicts, feedback)
+                if not isinstance(raw, dict):
+                    raise ValueError("response must be a dict")
+            except Exception:
+                feedback = _MALFORMED_JSON_FEEDBACK
+                if attempt == _MAX_RECONCILIATION_ATTEMPTS:
+                    break
+                continue
+
+            is_valid, bad_feedback = _validate_response(raw, expected_urls)
+            if is_valid:
+                result = _build_evidence(raw, no_def_urls, sources_checked)
+                outcome = "reconciled"
+                break
+
+            feedback = bad_feedback
             if attempt == _MAX_RECONCILIATION_ATTEMPTS:
                 break
-            continue
 
-        is_valid, bad_feedback = _validate_response(raw, expected_urls)
-        if is_valid:
-            return _build_evidence(raw, no_def_urls, sources_checked)
+        if result is None:
+            result = SourcePluralityEvidence(
+                sources_checked=sources_checked,
+                groups=[],
+                distinct_sources=[],
+                unresolved=[],
+                no_definition_sources=no_def_urls,
+                failed_reconciliation=[f.source_url for f in candidates],
+                notes="Reconciliation failed after all attempts.",
+            )
 
-        feedback = bad_feedback
-        if attempt == _MAX_RECONCILIATION_ATTEMPTS:
-            break
-
-    # Both attempts failed: all candidates go to failed_reconciliation
-    return SourcePluralityEvidence(
-        sources_checked=sources_checked,
-        groups=[],
-        distinct_sources=[],
-        unresolved=[],
-        no_definition_sources=no_def_urls,
-        failed_reconciliation=[f.source_url for f in candidates],
-        notes="Reconciliation failed after all attempts.",
+    append_log_entry(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "bucket": "C",
+            "company_name": company_name,
+            "claim_text": claim_text,
+            "sources_checked": result.sources_checked,
+            "definition_bearing": len(candidates),
+            "no_definition_count": len(no_def_urls),
+            "groups_found": len(result.groups),
+            "distinct_count": len(result.distinct_sources),
+            "unresolved_count": len(result.unresolved),
+            "failed_reconciliation_count": len(result.failed_reconciliation),
+            "attempts": attempts_made,
+            "outcome": outcome,
+        },
+        log_dir,
     )
+    return result

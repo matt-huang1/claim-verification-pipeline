@@ -7,10 +7,12 @@ the system prompt to verify the model routes A+B to a group, C to distinct,
 and D to unresolved.
 """
 
+import json
 import os
 
 import pytest
 
+from log_utils import LOG_FILENAME
 from reconciliation import (
     _DUPLICATE_URL_FEEDBACK,
     _HALLUCINATED_URL_FEEDBACK,
@@ -90,6 +92,7 @@ def test_zero_definition_bearing_findings_returns_empty_no_llm_call():
             _finding(_URL_NO_DEF, definition_found=False),
             _finding("https://other.com/report", definition_found=False),
         ],
+        company_name="TSMC",
         llm_fn=should_not_be_called,
     )
 
@@ -119,6 +122,7 @@ def test_one_definition_bearing_finding_goes_to_distinct_no_llm_call():
             _finding(_URL_A),
             _finding(_URL_NO_DEF, definition_found=False),
         ],
+        company_name="TSMC",
         llm_fn=should_not_be_called,
     )
 
@@ -148,6 +152,7 @@ def test_two_definition_bearing_findings_triggers_llm_call():
     reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=counting_fn,
     )
     assert called["n"] >= 1
@@ -168,6 +173,7 @@ def test_all_three_output_types_mapped_correctly():
             _finding(_URL_C),
             _finding(_URL_D),
         ],
+        company_name="TSMC",
         llm_fn=lambda ct, fs, fb: _well_formed_response(
             groups=[
                 {
@@ -203,6 +209,7 @@ def test_all_grouped_into_one_group():
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=lambda ct, fs, fb: _well_formed_response(
             groups=[
                 {
@@ -233,6 +240,7 @@ def test_all_sources_unresolved():
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=fn,
     )
     assert call_count["n"] == 1  # well-formed judgment, never retried
@@ -246,6 +254,7 @@ def test_all_sources_distinct():
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=lambda ct, fs, fb: _well_formed_response(
             distinct=[
                 {"source_url": _URL_A, "reasoning": "different scope A"},
@@ -282,6 +291,7 @@ def test_malformed_attempt_1_wellformed_attempt_2_uses_attempt_2():
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=fn,
     )
     assert call_count["n"] == 2
@@ -300,6 +310,7 @@ def test_both_attempts_malformed_all_go_to_failed_reconciliation():
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=always_bad,
     )
     assert call_count["n"] == 2
@@ -325,6 +336,7 @@ def test_all_unresolved_on_attempt_1_not_retried():
     reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=fn,
     )
     assert call_count["n"] == 1
@@ -340,6 +352,7 @@ def _assert_triggers_failed_reconciliation(llm_fn):
     result = reconcile_sources(
         claim_text="TSMC market share",
         findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
         llm_fn=llm_fn,
     )
     assert set(result.failed_reconciliation) == {_URL_A, _URL_B}
@@ -485,6 +498,208 @@ def test_unparseable_json_triggers_failed_reconciliation():
 
 
 # ---------------------------------------------------------------------------
+# Structured logging
+# ---------------------------------------------------------------------------
+
+
+def _read_log(tmp_path):
+    path = tmp_path / LOG_FILENAME
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def test_log_entry_for_no_definitions_outcome(tmp_path):
+    """
+    0 definition-bearing findings → one log entry with outcome="no_definitions",
+    attempts=0, definition_bearing=0, groups_found=0.
+    """
+    reconcile_sources(
+        claim_text="TSMC market share",
+        findings=[
+            _finding(_URL_NO_DEF, definition_found=False),
+            _finding("https://other.com/report", definition_found=False),
+        ],
+        company_name="TSMC",
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["bucket"] == "C"
+    assert e["company_name"] == "TSMC"
+    assert e["claim_text"] == "TSMC market share"
+    assert e["sources_checked"] == 2
+    assert e["definition_bearing"] == 0
+    assert e["no_definition_count"] == 2
+    assert e["groups_found"] == 0
+    assert e["distinct_count"] == 0
+    assert e["unresolved_count"] == 0
+    assert e["failed_reconciliation_count"] == 0
+    assert e["attempts"] == 0
+    assert e["outcome"] == "no_definitions"
+
+
+def test_log_entry_for_sole_source_outcome(tmp_path):
+    """
+    1 definition-bearing finding → one log entry with outcome="sole_source",
+    attempts=0, definition_bearing=1, distinct_count=1, groups_found=0.
+    """
+    reconcile_sources(
+        claim_text="TSMC market share",
+        findings=[
+            _finding(_URL_A),
+            _finding(_URL_NO_DEF, definition_found=False),
+        ],
+        company_name="TSMC",
+        log_dir=str(tmp_path),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["bucket"] == "C"
+    assert e["company_name"] == "TSMC"
+    assert e["claim_text"] == "TSMC market share"
+    assert e["sources_checked"] == 2
+    assert e["definition_bearing"] == 1
+    assert e["no_definition_count"] == 1
+    assert e["groups_found"] == 0
+    assert e["distinct_count"] == 1
+    assert e["unresolved_count"] == 0
+    assert e["failed_reconciliation_count"] == 0
+    assert e["attempts"] == 0
+    assert e["outcome"] == "sole_source"
+
+
+def test_log_entry_for_reconciled_outcome(tmp_path):
+    """
+    2+ definition-bearing findings, well-formed first attempt → one log entry
+    with outcome="reconciled", attempts=1, groups_found matching actual count.
+    """
+    reconcile_sources(
+        claim_text="TSMC market share",
+        findings=[_finding(_URL_A), _finding(_URL_B), _finding(_URL_C)],
+        company_name="TSMC",
+        log_dir=str(tmp_path),
+        llm_fn=lambda ct, fs, fb: _well_formed_response(
+            groups=[
+                {
+                    "member_source_urls": [_URL_A, _URL_B],
+                    "shared_definition_label": "pure-play excl. IDM",
+                    "reasoning": "both exclude IDM captive",
+                }
+            ],
+            distinct=[{"source_url": _URL_C, "reasoning": "includes IDMs"}],
+        ),
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["bucket"] == "C"
+    assert e["company_name"] == "TSMC"
+    assert e["claim_text"] == "TSMC market share"
+    assert e["sources_checked"] == 3
+    assert e["definition_bearing"] == 3
+    assert e["no_definition_count"] == 0
+    assert e["groups_found"] == 1
+    assert e["distinct_count"] == 1
+    assert e["unresolved_count"] == 0
+    assert e["failed_reconciliation_count"] == 0
+    assert e["attempts"] == 1
+    assert e["outcome"] == "reconciled"
+
+
+def test_log_entry_for_failed_outcome(tmp_path):
+    """
+    Both attempts malformed → one log entry with outcome="failed", attempts=2,
+    groups_found=0, failed_reconciliation_count=len(candidates).
+    """
+    reconcile_sources(
+        claim_text="TSMC market share",
+        findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
+        log_dir=str(tmp_path),
+        llm_fn=lambda ct, fs, fb: {},  # always missing expected URLs
+    )
+    entries = _read_log(tmp_path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["bucket"] == "C"
+    assert e["company_name"] == "TSMC"
+    assert e["claim_text"] == "TSMC market share"
+    assert e["sources_checked"] == 2
+    assert e["definition_bearing"] == 2
+    assert e["no_definition_count"] == 0
+    assert e["groups_found"] == 0
+    assert e["distinct_count"] == 0
+    assert e["unresolved_count"] == 0
+    assert e["failed_reconciliation_count"] == 2
+    assert e["attempts"] == 2
+    assert e["outcome"] == "failed"
+
+
+def test_bucket_a_and_bucket_c_entries_coexist_in_shared_log(tmp_path):
+    """
+    Running one Bucket A call and one Bucket C call with the same log_dir
+    produces entries from both in the same file, each correctly tagged with
+    their bucket field.
+    """
+    from extraction import extract_claim_evidence
+
+    extract_claim_evidence(
+        "TSMC accelerated its 100% renewable target to 2040",
+        allowlist=["tsmc.com"],
+        company_name="TSMC",
+        llm_fn=lambda c, f, s: {
+            "url": "https://pr.tsmc.com/english/news/3067",
+            "quote": (
+                "moving its target for 100 percent renewable energy consumption "
+                "for all global operations forward to 2040 from 2050"
+            ),
+        },
+        search_fn=lambda q: [
+            {
+                "url": "https://pr.tsmc.com/english/news/3067",
+                "title": "TSMC RE100",
+                "snippet": "TSMC moves target to 2040",
+            }
+        ],
+        fetch_fn=lambda url: {
+            "success": True,
+            "text": (
+                "TSMC announced it is moving its target for 100 percent renewable "
+                "energy consumption for all global operations forward to 2040 from "
+                "2050, accelerating its RE100 commitment by a full decade."
+            ),
+            "content_type": "text/html",
+            "failure_reason": None,
+        },
+        log_dir=str(tmp_path),
+    )
+
+    reconcile_sources(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        findings=[_finding(_URL_A), _finding(_URL_B)],
+        company_name="TSMC",
+        log_dir=str(tmp_path),
+        llm_fn=lambda ct, fs, fb: _well_formed_response(
+            distinct=[
+                {"source_url": _URL_A, "reasoning": "scope A"},
+                {"source_url": _URL_B, "reasoning": "scope B"},
+            ]
+        ),
+    )
+
+    entries = _read_log(tmp_path)
+    assert len(entries) == 2
+    buckets = {e["bucket"] for e in entries}
+    assert "A" in buckets
+    assert "C" in buckets
+    a_entries = [e for e in entries if e["bucket"] == "A"]
+    c_entries = [e for e in entries if e["bucket"] == "C"]
+    assert all(e["company_name"] == "TSMC" for e in a_entries)
+    assert all(e["company_name"] == "TSMC" for e in c_entries)
+
+
+# ---------------------------------------------------------------------------
 # Live test — opt-in only, costs money
 # ---------------------------------------------------------------------------
 
@@ -544,6 +759,7 @@ def test_live_reconcile_worked_examples():
     result = reconcile_sources(
         claim_text="TSMC has roughly 60% of the foundry market",
         findings=findings,
+        company_name="TSMC",
     )
 
     # A and B should be grouped together
