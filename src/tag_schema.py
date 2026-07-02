@@ -339,19 +339,43 @@ class SourcePluralityEvidence:
 
 
 @dataclass(frozen=True)
+class AssumptionItem:
+    """One assumption identified in the claim text."""
+
+    text: str  # the assumption, as stated or paraphrased
+    present_in_claim: bool  # True = explicitly stated; False = unstated/missing
+
+
+@dataclass(frozen=True)
+class CausalStep:
+    """One step in the causal chain identified in the claim text."""
+
+    text: str  # the step, e.g. "TSMC absence → no chips"
+    present_in_claim: bool  # True = explicitly stated; False = gap/leap
+
+
+@dataclass(frozen=True)
 class AssumptionsStatedEvidence:
     """
-    Placeholder for Bucket D verification: no fact-check is possible even
-    in principle, so the standard is whether the causal chain and
-    assumptions are explicit, not whether the claim is "true".
-    No upstream check populates this evidence type yet (the Bucket B/C/D
-    checks themselves are not built). The tag-layer logic here is
-    complete and tested.
+    Bucket D verification record. The LLM surfaces what is explicitly
+    present and what is missing in the claim's reasoning — it never
+    reaches a verdict. The human reviewer reads assumptions and
+    causal_steps and decides whether the claim is honest enough to
+    include in a report.
+
+    notes is human-only — never populated by the LLM. It is where a
+    reviewer records their own judgment after reading the LLM's
+    partial reading alongside the original claim.
+
+    Empty lists are valid and correctly produce
+    overall_status="assumptions_not_stated" — a claim so thinly
+    written that the LLM finds nothing to report is a real, honest
+    finding, not an error.
     """
 
-    assumptions_listed: bool
-    causal_chain_explicit: bool
-    notes: str
+    assumptions: list[AssumptionItem]
+    causal_steps: list[CausalStep]
+    notes: str  # human-only, never populated by LLM
 
 
 @dataclass
@@ -451,14 +475,17 @@ class ClaimTag:
         if self.bucket == "D":
             if self.assumptions_evidence is None:
                 return "incomplete"
-            if not (
-                self.assumptions_evidence.assumptions_listed
-                and self.assumptions_evidence.causal_chain_explicit
-            ):
-                return "assumptions_not_stated"
-            # NOT "verified" - Bucket D claims are never "verified" in the
-            # Bucket A sense, since no fact-check is possible even in
-            # principle.
-            return "assumptions_explicit"
+            has_stated_assumption = any(
+                a.present_in_claim for a in self.assumptions_evidence.assumptions
+            )
+            has_stated_step = any(
+                s.present_in_claim for s in self.assumptions_evidence.causal_steps
+            )
+            if has_stated_assumption and has_stated_step:
+                # NOT "verified" - Bucket D claims are never "verified" in the
+                # Bucket A sense, since no fact-check is possible even in
+                # principle.
+                return "assumptions_explicit"
+            return "assumptions_not_stated"
 
         return "unknown_bucket"

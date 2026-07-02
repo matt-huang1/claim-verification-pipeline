@@ -2,8 +2,8 @@
 log_utils.py
 
 Shared append helper for the evaluation log. extraction.py (Bucket A),
-bucket_b_pipeline.py (Bucket B), and reconciliation.py (Bucket C) write to
-the same file so cross-bucket,
+bucket_b_pipeline.py (Bucket B), reconciliation.py (Bucket C), and
+bucket_d_analysis.py (Bucket D) write to the same file so cross-bucket,
 cross-company history is queryable in one place without manually merging files.
 Every entry must include company_name and bucket as top-level fields so a
 reader can filter or group by either dimension without bucket-specific parsing.

@@ -9,7 +9,9 @@ rather than a settable field).
 """
 
 from tag_schema import (
+    AssumptionItem,
     AssumptionsStatedEvidence,
+    CausalStep,
     ClaimTag,
     CriterionEvidence,
     DefinitionGroup,
@@ -440,13 +442,118 @@ def test_bucket_d_never_returns_verified_even_when_fully_checked():
         claim_text="counterfactual: if TSMC disappeared",
         bucket="D",
         assumptions_evidence=AssumptionsStatedEvidence(
-            assumptions_listed=True,
-            causal_chain_explicit=True,
+            assumptions=[
+                AssumptionItem(
+                    text="Advanced chips are essential for clean energy technology",
+                    present_in_claim=True,
+                )
+            ],
+            causal_steps=[
+                CausalStep(
+                    text="No advanced chips → clean energy technology deployment slows",
+                    present_in_claim=True,
+                )
+            ],
             notes="fully reasoned through",
         ),
     )
     assert tag.overall_status == "assumptions_explicit"
     assert tag.overall_status != "verified"
+
+
+def test_bucket_d_empty_lists_is_assumptions_not_stated():
+    """Empty assumptions and causal_steps → no stated content → assumptions_not_stated."""
+    tag = ClaimTag(
+        claim_id="c13",
+        claim_text="some counterfactual",
+        bucket="D",
+        assumptions_evidence=AssumptionsStatedEvidence(
+            assumptions=[],
+            causal_steps=[],
+            notes="",
+        ),
+    )
+    assert tag.overall_status == "assumptions_not_stated"
+
+
+def test_bucket_d_all_unstated_is_assumptions_not_stated():
+    """All items have present_in_claim=False → no stated content → assumptions_not_stated."""
+    tag = ClaimTag(
+        claim_id="c14",
+        claim_text="some counterfactual",
+        bucket="D",
+        assumptions_evidence=AssumptionsStatedEvidence(
+            assumptions=[
+                AssumptionItem(text="unstated premise A", present_in_claim=False),
+                AssumptionItem(text="unstated premise B", present_in_claim=False),
+            ],
+            causal_steps=[
+                CausalStep(text="inferential leap → outcome", present_in_claim=False),
+            ],
+            notes="",
+        ),
+    )
+    assert tag.overall_status == "assumptions_not_stated"
+
+
+def test_bucket_d_one_stated_assumption_and_one_stated_step_is_explicit():
+    """At least one True in each list → assumptions_explicit."""
+    tag = ClaimTag(
+        claim_id="c15",
+        claim_text="some counterfactual",
+        bucket="D",
+        assumptions_evidence=AssumptionsStatedEvidence(
+            assumptions=[
+                AssumptionItem(text="unstated premise", present_in_claim=False),
+                AssumptionItem(text="stated premise", present_in_claim=True),
+            ],
+            causal_steps=[
+                AssumptionItem(text="stated step", present_in_claim=True),
+            ],
+            notes="",
+        ),
+    )
+    assert tag.overall_status == "assumptions_explicit"
+
+
+def test_bucket_d_stated_assumption_but_no_stated_step_is_not_stated():
+    """Stated assumption but all causal_steps present_in_claim=False → not_stated."""
+    tag = ClaimTag(
+        claim_id="c16",
+        claim_text="some counterfactual",
+        bucket="D",
+        assumptions_evidence=AssumptionsStatedEvidence(
+            assumptions=[
+                AssumptionItem(
+                    text="explicitly stated assumption", present_in_claim=True
+                ),
+            ],
+            causal_steps=[
+                CausalStep(text="missing step", present_in_claim=False),
+            ],
+            notes="",
+        ),
+    )
+    assert tag.overall_status == "assumptions_not_stated"
+
+
+def test_bucket_d_stated_step_but_no_stated_assumption_is_not_stated():
+    """Stated causal step but all assumptions present_in_claim=False → not_stated."""
+    tag = ClaimTag(
+        claim_id="c17",
+        claim_text="some counterfactual",
+        bucket="D",
+        assumptions_evidence=AssumptionsStatedEvidence(
+            assumptions=[
+                AssumptionItem(text="missing assumption", present_in_claim=False),
+            ],
+            causal_steps=[
+                CausalStep(text="explicitly stated step", present_in_claim=True),
+            ],
+            notes="",
+        ),
+    )
+    assert tag.overall_status == "assumptions_not_stated"
 
 
 def test_overall_status_cannot_be_set_directly():
