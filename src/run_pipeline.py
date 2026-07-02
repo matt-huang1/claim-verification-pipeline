@@ -47,6 +47,7 @@ from bucket_b_pipeline import run_bucket_b_pipeline
 from bucket_c_pipeline import run_bucket_c_pipeline
 from bucket_d_pipeline import run_bucket_d_pipeline
 from bucket_triage import triage_claim
+from extraction import default_llm_call as _extraction_default_llm_call
 from extraction import extract_claim_evidence
 from pipeline import verify_bucket_a_claim
 
@@ -243,13 +244,12 @@ def _run_bucket_a(
     attempt are available to pass to verify_bucket_a_claim. See module
     docstring for rationale.
     """
-    import extraction as _ext
     from page_fetch import fetch_page_text
 
     _captured: dict = {"url": "", "quote": "", "document": ""}
 
     def _cap_llm(ct, fb, sr):
-        fn = extraction_llm_fn or _ext._default_llm_call
+        fn = extraction_llm_fn or _extraction_default_llm_call
         result = fn(ct, fb, sr)
         _captured["url"] = result.get("url", "")
         _captured["quote"] = result.get("quote", "")

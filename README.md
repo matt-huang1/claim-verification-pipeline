@@ -49,7 +49,7 @@ Two company assessments have been independently rebuilt from primary sources to 
 - **TSMC** — abundant disclosure; tests whether verification can catch an error hiding inside real, extensive source material.
 - **Frontier Lithium** — thin/pre-production disclosure; tests what an honest system says when there's almost nothing to verify, and the risk is marketing tone outrunning actual commitments rather than competing facts.
 
-Further companies (Patagonia, TotalEnergies, Cheniere, Coal India, Vestas, Microsoft) are an identified backlog, each chosen to test a specific structural gap (e.g. a single entity with two opposed climate signatures; a same-product-opposite-use contradiction), not added yet, to avoid building extensive ground truth before the system that uses it exists.
+The ground truth company set has expanded substantially. Detailed primary-source assessments now exist for TSMC, Patagonia, TotalEnergies, Frontier Lithium, and Antofagasta. Lighter-touch coverage exists for Vestas, Coal India, Cheniere, and Microsoft, each chosen to stress-test a specific structural gap: Vestas (low emissions, high enablement — the clean positive anchor), Coal India (high emissions, low enablement — the clean negative anchor), Cheniere (contested LNG-as-transition-fuel framing), and Microsoft (low direct emissions, contested systemic effect via AI data centre demand). Each of the nine companies has been assessed against IIGCC NZIF 2.0 and TPI where applicable, with every classification checked against the framework's actual published structure rather than accepted as asserted.
 
 ## Status
 
@@ -67,7 +67,7 @@ Bucket D is now complete and **live-verified end to end**. Bucket D covers futur
 
 All four buckets write to one shared structured log (`logs/evaluation_log.jsonl`). Every entry is tagged with `company_name` and `bucket`, so cross-bucket, cross-company history is queryable in one place. `company_name` is a required, explicitly-supplied parameter to every orchestrator — never inferred.
 
-**What's not yet built:** a top-level dispatcher that takes an arbitrary claim, routes it to the right bucket, and runs the appropriate pipeline. This requires extending `bucket_triage.py` to classify Bucket D as well as Bucket A/C, and building a single entry point that hands off to the right orchestrator. Breadth (more ground-truth companies) is also an explicit, deliberate backlog, not a current priority.
+The top-level dispatcher (`run_pipeline.py`) is now complete and **live-verified end to end**. It takes any claim, runs `triage_claim` to route it automatically to Bucket A, C, or D (Bucket B always requires explicit `bucket="B"` — it cannot be inferred from claim text alone), and returns a consistent four-field dict (`outcome`, `bucket`, `triage_reasoning`, `tag`) regardless of which pipeline ran. `bucket_triage.py` has been extended to classify all three routable buckets, with a fourth worked counterexample added to the system prompt showing why a future-dated public commitment ("TSMC committed to achieving RE100 by 2040") is Bucket A rather than Bucket D — the commitment itself is a present-tense verifiable fact. The dispatcher's consistent return shape was designed specifically for a front-end consumer: one contract to handle regardless of which bucket ran. Live-verified via two real API calls (Bucket C on the TSMC foundry market claim, and Bucket D explicit routing on the TSMC counterfactual claim).
 
 ## Stack
 

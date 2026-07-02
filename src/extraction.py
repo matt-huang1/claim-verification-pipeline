@@ -342,6 +342,17 @@ def _default_llm_call(
     return {"url": data["url"], "quote": data["quote"]}
 
 
+def default_llm_call(
+    claim_text: str, feedback: str | None, search_results: list[dict]
+) -> dict:
+    """
+    Public wrapper around the real LLM call. Exposed so callers such as
+    run_pipeline.py can reference it without accessing a private symbol.
+    Delegates entirely to _default_llm_call.
+    """
+    return _default_llm_call(claim_text, feedback, search_results)
+
+
 def _log_attempt(record: AttemptRecord, claim_text: str, log_dir: str) -> None:
     """Append one attempt to the shared evaluation log."""
     append_log_entry(

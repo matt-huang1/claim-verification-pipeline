@@ -581,6 +581,17 @@ def test_bucket_c_outcome_is_definitional_ambiguity_unresolved():
 
 
 # ---------------------------------------------------------------------------
+# Public interface tests
+# ---------------------------------------------------------------------------
+
+
+def test_extraction_default_llm_call_is_publicly_importable():
+    from extraction import default_llm_call
+
+    assert callable(default_llm_call)
+
+
+# ---------------------------------------------------------------------------
 # Live API tests (opt-in)
 # ---------------------------------------------------------------------------
 
