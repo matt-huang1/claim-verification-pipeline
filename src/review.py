@@ -128,13 +128,19 @@ def _fmt_bucket_b_tpi(tpi: TPIManagementQualityEvidence) -> str:
 
     if tpi.indicator_results:
         passing = sorted(k for k, v in tpi.indicator_results.items() if v == "yes")
-        failing = sorted(k for k, v in tpi.indicator_results.items() if v != "yes")
+        failing = sorted(k for k, v in tpi.indicator_results.items() if v == "no")
+        not_applicable = sorted(
+            k for k, v in tpi.indicator_results.items() if v == "not-applicable"
+        )
         lines.append("")
         lines.append("  Indicators:")
         p_str = ", ".join(str(n) for n in passing) if passing else "none"
         f_str = ", ".join(str(n) for n in failing) if failing else "none"
         lines.append(f"    Passing ({len(passing)}): {p_str}")
         lines.append(f"    Failing ({len(failing)}): {f_str}")
+        if not_applicable:
+            na_str = ", ".join(str(n) for n in not_applicable)
+            lines.append(f"    Not applicable ({len(not_applicable)}): {na_str}")
     else:
         lines.append("  Indicators: not available")
 

@@ -121,6 +121,48 @@ def test_format_tag_bucket_b_tpi_evidence():
     assert "22" in out
 
 
+def test_format_tag_bucket_b_tpi_not_applicable_shown_separately():
+    """
+    A "not-applicable" indicator must appear under its own
+    "Not applicable" section and must NOT appear under "Failing".
+
+    Confirmed against Antofagasta's real TPI result: indicator 12
+    is "not-applicable" at Level 3 (not assessed at this level),
+    indicators 10 and 21 are "no" (genuinely failing).
+    """
+    indicators = {i: "yes" for i in range(1, 24)}
+    indicators[10] = "no"
+    indicators[12] = "not-applicable"
+    indicators[21] = "no"
+    tag = ClaimTag(
+        claim_id="test-b-tpi-na",
+        claim_text="Antofagasta TPI Management Quality.",
+        bucket="B",
+        timestamp="2026-07-02T00:00:00+00:00",
+        tpi_evidence=TPIManagementQualityEvidence(
+            company_tpi_id="2739",
+            company_slug="antofagasta",
+            overall_level=3,
+            current_level_date="2024-12-15",
+            indicator_results=indicators,
+            historical_levels=[("2024-12-15", 3)],
+            max_level=5,
+        ),
+    )
+    out = format_tag(tag)
+    assert "Not applicable" in out
+    assert "12" in out
+    # indicator 12 must NOT appear in the Failing line
+    lines = out.splitlines()
+    failing_line = next((ln for ln in lines if ln.strip().startswith("Failing")), "")
+    assert (
+        "12" not in failing_line
+    ), f"Indicator 12 should not appear in Failing line: {failing_line!r}"
+    # indicators 10 and 21 must appear in the Failing line
+    assert "10" in failing_line
+    assert "21" in failing_line
+
+
 # ─── Bucket C ─────────────────────────────────────────────────────────────────
 
 
