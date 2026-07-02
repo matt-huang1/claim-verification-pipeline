@@ -14,20 +14,20 @@ no fetch), decide whether the claim belongs to:
 
 WHY THIS IS NOT A KEYWORD/REGEX CHECK:
 
-"TSMC is the world's largest pure-play foundry by revenue" contains "largest",
-a comparative/ranking word that might seem to signal Bucket C, but is actually
-Bucket A: "pure-play foundry" is a precisely bounded category with one real,
-knowable answer from revenue figures.
+"TSMC's revenue was $69.3 billion in FY2023" looks like it might be Bucket C
+(a specific number invites definitional scrutiny), but is actually Bucket A:
+there is one real, knowable answer from TSMC's own published financial
+statements with no definitional contest possible.
 
 Conversely, "TSMC has roughly 60% of the foundry market" has no comparative
-keyword at all in some phrasings, yet is genuinely Bucket C: "the foundry
-market" has no single agreed boundary (does it include IDMs' in-house fab
-capacity or not?).
+keyword at all, yet is genuinely Bucket C: "the foundry market" has no single
+agreed boundary (does it include IDMs' in-house fab capacity or not?).
 
 The real distinguishing test is whether the claim's underlying category is
-precisely bounded (Bucket A) or definitionally contested (Bucket C) — not
-anything detectable from surface wording, which can mislead in either
-direction. This requires real judgment, not pattern matching.
+precisely bounded (Bucket A), definitionally contested (Bucket C), or
+uncheckable in principle (Bucket D) — not anything detectable from surface
+wording, which can mislead in every direction. This requires real judgment,
+not pattern matching.
 
 WHY "AMBIGUOUS" IS NEVER RETRIED:
 
@@ -47,15 +47,18 @@ load_dotenv()
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
-_VALID_CLASSIFICATIONS = {"bucket_a", "bucket_c", "ambiguous"}
+_VALID_CLASSIFICATIONS = {"bucket_a", "bucket_c", "bucket_d", "ambiguous"}
 
 _SYSTEM_PROMPT = """\
-You classify factual claims into exactly one of three routing categories:
+You classify factual claims into exactly one of four routing categories:
 
   bucket_a — a single authoritative source exists in principle. The claim's
              underlying category is precisely bounded, so there is one real,
              knowable answer (e.g. from a company filing, a regulatory
              disclosure, or a definitional standard that everyone uses).
+             This includes claims about commitments a company has publicly
+             made — the commitment is a present-tense checkable fact, even
+             if the target date is in the future.
 
   bucket_c — no single authoritative source exists in principle. The claim's
              underlying category is definitionally contested: reasonable
@@ -63,21 +66,29 @@ You classify factual claims into exactly one of three routing categories:
              definitions would arrive at different numbers, so no one source
              is uniquely authoritative.
 
-  ambiguous — you cannot confidently classify this claim as bucket_a or
-              bucket_c. Use this only when genuine uncertainty about the
-              category boundary prevents confident routing; do not use it as
-              a fallback for claims that are merely unusual.
+  bucket_d — the claim is future-facing or counterfactual, and no fact-check
+             is possible even in principle. This covers claims about what
+             would happen in a hypothetical world, or projections whose truth
+             cannot be established from any present source. The question is
+             not whether the claim is true, but whether its reasoning is
+             explicit.
+
+  ambiguous — you cannot confidently classify this claim as bucket_a,
+              bucket_c, or bucket_d. Use this only when genuine uncertainty
+              about the category boundary prevents confident routing; do not
+              use it as a fallback for claims that are merely unusual.
 
 THE REAL DISTINGUISHING TEST is not surface wording. It is whether the
-claim's underlying category is precisely bounded or definitionally contested.
-Surface wording is an unreliable signal and can mislead in either direction —
-here are two worked counterexamples that prove this:
+claim's underlying category is precisely bounded (bucket_a), definitionally
+contested (bucket_c), or uncheckable in principle (bucket_d). Surface
+wording is an unreliable signal and can mislead — here are three worked
+counterexamples that prove this:
 
   MISLEADING TOWARD bucket_c (actually bucket_a):
-    "TSMC is the world's largest pure-play foundry by revenue"
-    This contains "largest", a comparative/ranking word. But "pure-play
-    foundry" is a precisely bounded category — there is one real, knowable
-    answer from revenue figures. This is bucket_a.
+    "TSMC's revenue was $69.3 billion in FY2023."
+    This is a specific historical financial figure. There is one real,
+    knowable answer from TSMC's own published financial statements — no
+    definitional contest, no analyst disagreement. This is bucket_a.
 
   MISLEADING TOWARD bucket_a (actually bucket_c):
     "TSMC has roughly 60% of the foundry market"
@@ -86,11 +97,24 @@ here are two worked counterexamples that prove this:
     analysts drawing on different valid scope definitions produce different
     figures. This is bucket_c.
 
+  MISLEADING TOWARD bucket_d (actually bucket_a):
+    "TSMC committed to achieving RE100 by 2040."
+    This mentions a future target date. But the commitment itself is a
+    present-tense verifiable fact — TSMC either made this commitment in a
+    real press release or did not. There is one authoritative source. This
+    is bucket_a, not bucket_d.
+
+  GENUINELY bucket_d:
+    "Without TSMC, the climate transition would be set back by a decade."
+    No source can verify this — it describes a counterfactual world that
+    does not exist. The question is not whether it is true, but whether
+    the reasoning behind it is explicitly stated. This is bucket_d.
+
 Apply this same reasoning to the claim you are given. Respond with ONLY a
 JSON object with exactly two fields:
-  "classification": one of "bucket_a", "bucket_c", or "ambiguous"
+  "classification": one of "bucket_a", "bucket_c", "bucket_d", or "ambiguous"
   "reasoning": a short explanation of why you chose this classification
-               (required on every outcome, including bucket_a and bucket_c)
+               (required on every outcome)
 """
 
 
@@ -120,8 +144,8 @@ def triage_claim(claim_text: str, llm_fn=None) -> dict:
 
     Returns:
         {
-            "classification": str,  # "bucket_a" | "bucket_c" | "ambiguous"
-                                    # | "malformed_llm_response"
+            "classification": str,  # "bucket_a" | "bucket_c" | "bucket_d"
+                        # | "ambiguous" | "malformed_llm_response"
             "reasoning": str | None,  # model's reasoning, or None if malformed
         }
 

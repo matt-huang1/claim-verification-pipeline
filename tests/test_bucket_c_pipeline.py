@@ -199,6 +199,33 @@ def test_triage_ambiguous_returns_ambiguous_dict():
     assert gather_called["n"] == 0
 
 
+def test_triage_bucket_d_returns_routed_dict():
+    """
+    When triage returns "bucket_d", outcome is "routed_to_bucket_d",
+    triage_reasoning is populated, tag is None, and gather/reconcile
+    are never called.
+    """
+    gather_called = {"n": 0}
+
+    def counting_search_fn(query):
+        gather_called["n"] += 1
+        return []
+
+    result = run_bucket_c_pipeline(
+        _CLAIM,
+        _ALLOWLIST,
+        company_name=_COMPANY,
+        claim_id=_CLAIM_ID,
+        triage_llm_fn=_make_triage_fn("bucket_d", "counterfactual, not checkable"),
+        search_fn=counting_search_fn,
+    )
+
+    assert result["outcome"] == "routed_to_bucket_d"
+    assert result["triage_reasoning"] == "counterfactual, not checkable"
+    assert result["tag"] is None
+    assert gather_called["n"] == 0
+
+
 def test_triage_malformed_returns_triage_failed_dict():
     """
     When the triage LLM returns a malformed response, outcome is

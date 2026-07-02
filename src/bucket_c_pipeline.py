@@ -135,6 +135,13 @@ def run_bucket_c_pipeline(
             "tag": None,
         }
 
+    if classification == "bucket_d":
+        return {
+            "outcome": "routed_to_bucket_d",
+            "triage_reasoning": reasoning,
+            "tag": None,
+        }
+
     if classification == "malformed_llm_response":
         return {
             "outcome": "triage_failed",

@@ -74,14 +74,62 @@ def test_malformed_json_yields_malformed_llm_response():
 
 def test_invalid_classification_value_yields_malformed_llm_response():
     """
-    A classification value outside the three allowed strings must be caught
-    as malformed_llm_response, not silently accepted as a fourth outcome.
+    A classification value outside the four allowed strings must be caught
+    as malformed_llm_response, not silently accepted.
     """
     result = triage_claim(
         "some claim",
         llm_fn=lambda _: {
             "classification": "bucket_b",
             "reasoning": "this should not be accepted",
+        },
+    )
+    assert result["classification"] == "malformed_llm_response"
+    assert result["reasoning"] is None
+
+
+def test_bucket_d_passthrough():
+    """A bucket_d classification with reasoning is returned as-is."""
+    result = triage_claim(
+        "some counterfactual claim",
+        llm_fn=lambda _: {
+            "classification": "bucket_d",
+            "reasoning": "counterfactual — no source can verify this",
+        },
+    )
+    assert result["classification"] == "bucket_d"
+    assert result["reasoning"] == "counterfactual — no source can verify this"
+
+
+def test_bucket_d_not_retried():
+    """
+    bucket_d is a stable judgment outcome — llm_fn is called exactly once,
+    same as ambiguous.
+    """
+    call_count = {"n": 0}
+
+    def counting_fn(_):
+        call_count["n"] += 1
+        return {
+            "classification": "bucket_d",
+            "reasoning": "uncheckable counterfactual",
+        }
+
+    result = triage_claim("some claim", llm_fn=counting_fn)
+    assert result["classification"] == "bucket_d"
+    assert call_count["n"] == 1, "bucket_d must not trigger any retry"
+
+
+def test_bucket_d_invalid_string_still_yields_malformed():
+    """
+    bucket_b remains invalid after the extension — only bucket_a, bucket_c,
+    bucket_d, and ambiguous are accepted.
+    """
+    result = triage_claim(
+        "some claim",
+        llm_fn=lambda _: {
+            "classification": "bucket_b",
+            "reasoning": "should still be rejected",
         },
     )
     assert result["classification"] == "malformed_llm_response"
@@ -126,9 +174,9 @@ def test_live_triage_counterexample_claims():
     Calls triage_claim with no injected llm_fn (real OpenAI call) against the
     two worked counterexamples from the module docstring:
 
-      - "TSMC is the world's largest pure-play foundry by revenue"
-        Expected: bucket_a — "pure-play foundry" is precisely bounded.
-
+      - "TSMC's revenue was $69.3 billion in FY2023."
+        Expected: bucket_a — a specific historical figure with one
+        authoritative source and no definitional contest.
       - "TSMC has roughly 60% of the foundry market"
         Expected: bucket_c — "the foundry market" is definitionally contested.
 
@@ -137,7 +185,7 @@ def test_live_triage_counterexample_claims():
     is built around, not just that the function plumbing works.
     Requires OPENAI_API_KEY in the environment.
     """
-    bucket_a_claim = "TSMC is the world's largest pure-play foundry by revenue"
+    bucket_a_claim = "TSMC's revenue was $69.3 billion in FY2023."
     bucket_c_claim = "TSMC has roughly 60% of the foundry market"
 
     result_a = triage_claim(bucket_a_claim)
@@ -153,3 +201,23 @@ def test_live_triage_counterexample_claims():
         f"got {result_c['classification']!r}. Reasoning: {result_c['reasoning']}"
     )
     assert isinstance(result_c["reasoning"], str) and result_c["reasoning"]
+
+    bucket_d_claim = (
+        "Without TSMC, the climate transition would be set back by a decade."
+    )
+    result_d = triage_claim(bucket_d_claim)
+    assert result_d["classification"] == "bucket_d", (
+        f"Expected bucket_d for '{bucket_d_claim}', "
+        f"got {result_d['classification']!r}. "
+        f"Reasoning: {result_d['reasoning']}"
+    )
+    assert isinstance(result_d["reasoning"], str) and result_d["reasoning"]
+
+    bucket_a_commitment_claim = "TSMC committed to achieving RE100 by 2040."
+    result_a2 = triage_claim(bucket_a_commitment_claim)
+    assert result_a2["classification"] == "bucket_a", (
+        f"Expected bucket_a for '{bucket_a_commitment_claim}', "
+        f"got {result_a2['classification']!r}. "
+        f"Reasoning: {result_a2['reasoning']}"
+    )
+    assert isinstance(result_a2["reasoning"], str) and result_a2["reasoning"]
