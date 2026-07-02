@@ -60,7 +60,7 @@ def _build_html(
 ) -> str:
     """
     Build a minimal TPI-style HTML page with the given indicator pass/fail list.
-    Each string in `indicators` must be "yes" or "no".
+    Each string in `indicators` must be "yes", "no", or "not-applicable".
     include_dropdown=True adds a RemoteDropdown div with a fake company ID.
     """
     divs = "\n".join(
@@ -227,6 +227,34 @@ def test_overall_level_none_when_not_in_page():
 
     assert result["success"] is True
     assert result["overall_level"] is None
+
+
+def test_not_applicable_indicator_is_parsed_correctly():
+    """
+    A page with one "not-applicable" indicator must parse successfully
+    — success=True, values_ok=True, and the indicator stored as
+    "not-applicable" in the result dict.
+
+    This was found live against Antofagasta (TPI Level 3), which has
+    one indicator with class "mq-answer--not-applicable". TotalEnergies
+    (Level 5) has no such indicators, so the original implementation
+    never encountered this value.
+    """
+    indicators = ["yes"] * 22 + ["not-applicable"]
+    html = _build_html(indicators)
+    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+        result = extract_tpi_management_quality("antofagasta")
+
+    assert result["success"] is True, (
+        f"Expected success=True, got failure_reason=" f"{result['failure_reason']!r}"
+    )
+    indicators_dict = result["indicators"]
+    assert indicators_dict[23] == "not-applicable", (
+        f"Expected 'not-applicable' at indicator 23, " f"got {indicators_dict[23]!r}"
+    )
+    assert all(
+        indicators_dict[i] == "yes" for i in range(1, 23)
+    ), "Expected all other indicators to be 'yes'"
 
 
 # ---------------------------------------------------------------------------

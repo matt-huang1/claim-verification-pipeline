@@ -19,8 +19,10 @@ CONFIRMED PAGE STRUCTURE (as of 2026-06-28, TotalEnergies):
 
 Each of the 23 Management Quality indicators is rendered as a div with class:
 
-    "mq-answer mq-answer--yes levelN"   (indicator passed)
-    "mq-answer mq-answer--no levelN"    (indicator failed)
+    "mq-answer mq-answer--yes levelN"            (indicator passed)
+    "mq-answer mq-answer--no levelN"             (indicator failed)
+    "mq-answer mq-answer--not-applicable levelN" (not applicable at
+                                                   this level)
 
 where N is an integer (0–5) representing the TPI level the indicator belongs
 to. The divs appear in document order, matching indicator numbers 1 through 23.
@@ -84,7 +86,8 @@ that failed, not the whole operation.
                                     distinct from "fetch_failed", which covers
                                     genuine network/timeout/server problems.
     "unexpected_indicator_count"  — parsed count != 23
-    "unexpected_indicator_value"  — a class value other than yes/no found
+    "unexpected_indicator_value"  — a class value other than yes/no/
+                                    not-applicable found
 
   Historical fetch failure (success=True, historical_levels=None):
     "historical_fetch_failed"     — non-200, network error, or JSON parse error
@@ -165,15 +168,17 @@ class _MQParser(HTMLParser):
       - the company's numeric ID (extracted from the dropdown's "url" field)
 
     After feed() + finish(), inspect:
-      self.indicators       — list of "yes" or "no" strings, document order
-      self.values_ok        — False if any unexpected class value encountered
+      self.indicators       — list of "yes", "no", or "not-applicable"
+                              strings, document order
+      self.values_ok        — False if any class value other than "yes",
+                              "no", or "not-applicable" is encountered
       self.overall_level    — int | None
       self.dropdown_options — list of (date_str, assessment_id) tuples
       self.company_id       — str | None  (e.g. "1216")
     """
 
     _MQ_ANSWER_RE = re.compile(r"\bmq-answer\b")
-    _RESULT_RE = re.compile(r"\bmq-answer--(yes|no)\b")
+    _RESULT_RE = re.compile(r"\bmq-answer--(yes|no|not-applicable)\b")
     _LEVEL_TEXT_RE = re.compile(r"Current\s+level[:\s]+(\d+)", re.IGNORECASE)
     _COMPANY_ID_RE = re.compile(r"/companies/(\d+)/")
 
@@ -317,7 +322,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
             "success": True,
             "company_tpi_id": str | None,
             "overall_level": int | None,
-            "indicators": {1: "yes", ..., 23: "no"},
+            "indicators": {1: "yes", ..., 23: "no"},  # values: "yes" | "no" | "not-applicable"
             "historical_levels": [(date_str, level_int), ...] | None,
             "current_level_date": str | None,  # date of TPI's most recent assessment, NOT the date the company first reached its current level — those differ when a level is held across multiple cycles (e.g. TotalEnergies held Level 4 from 2018–2023 before reaching Level 5 in Dec 2024); to find "when did this company reach level X," scan historical_levels for the first entry where level_int == X
             "max_level": int | None,
@@ -341,7 +346,7 @@ def extract_tpi_management_quality(company_slug: str) -> dict:
         "fetch_failed"                — network error, timeout, or non-200/non-404
         "company_not_in_tpi_universe" — HTTP 404; company not in TPI's universe
         "unexpected_indicator_count"  — count of mq-answer divs != 23
-        "unexpected_indicator_value"  — a class value other than yes/no found
+        "unexpected_indicator_value"  — a class value other than yes/no/not-applicable found
 
     historical_fetch_failure_reason values (secondary fetch; success=True):
         "historical_fetch_failed"     — non-200, network error, or JSON error
