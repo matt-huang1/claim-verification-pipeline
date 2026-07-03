@@ -170,7 +170,7 @@ def _default_llm_call(claim_text: str, feedback: str | None) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def _validate_response(raw: dict) -> tuple[bool, str | None]:

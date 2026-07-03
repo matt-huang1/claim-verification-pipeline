@@ -137,7 +137,7 @@ def _default_llm_call(claim_text: str) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def triage_claim(claim_text: str, llm_fn=None) -> dict:

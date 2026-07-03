@@ -168,7 +168,7 @@ def _default_url_selection_llm_call(
         ],
         response_format={"type": "json_object"},
     )
-    data = json.loads(response.choices[0].message.content)
+    data = json.loads(response.choices[0].message.content or "")
     return {"url": data["url"]}
 
 

@@ -204,7 +204,7 @@ def _default_llm_call(
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def _validate_response(

@@ -52,7 +52,9 @@ def _mock_client(results: list[dict]) -> MagicMock:
 
 
 def test_successful_response_returns_shaped_results():
-    with patch("agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)):
+    with patch(
+        "agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)
+    ):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC renewable energy 2040")
     assert len(results) == 3
@@ -72,7 +74,9 @@ def test_snippet_maps_from_content_field():
 
 def test_max_results_cap_is_enforced():
     """If the API returns more results than max_results, only that many are kept."""
-    with patch("agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)):
+    with patch(
+        "agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)
+    ):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC", max_results=2)
     assert len(results) == 2

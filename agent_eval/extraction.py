@@ -1,109 +1,44 @@
 """
 extraction.py
 
-The AI extraction layer - the ONLY place in this project that calls a real
-LLM. It asks a model to select the best candidate source URL from real web
-search results and propose a supporting quote, then fetches that URL's content
-and runs the proposal through the existing, fully-deterministic pipeline
-(pipeline.verify_bucket_a_claim) to check whether the self-report actually
-holds up.
+The Bucket A extraction layer, and the ONLY module that calls a real LLM.
+Everything downstream — domain_check, quote_match, tag_schema, pipeline —
+is deterministic and testable with no API key; this module is the single,
+deliberately thin boundary where non-determinism enters.
 
-Everything downstream of this file - domain_check, quote_match, tag_schema,
-pipeline - stays exactly as built: no model, no randomness, fully testable
-with no API key. This module is the single boundary where non-determinism
-enters, and it is deliberately thin.
+The flow: run a Tavily web search on the claim, hand the model the real
+candidate URLs and snippets, let it propose one URL plus a supporting
+quote, fetch that URL's content live, and run the proposal through the
+deterministic pipeline (`verify_bucket_a_claim`) to check whether it holds.
 
-INDEPENDENT GROUND TRUTH - why the LLM does not see the document:
+Four properties make this a real check rather than the model grading its
+own homework:
 
-The model is given the claim text and real search-result candidates (URLs
-+ snippets). The source document is fetched live from the URL the model
-selects - it is not supplied by the caller or by the model. The legitimacy
-`allowlist` is supplied by the caller and checked against the model's URL
-proposal. This is the whole point: the document content comes from the
-actual URL, not from a caller-supplied string, and the allowlist is
-verified independently of the model's proposal. A hallucinated source
-cannot validate itself - exactly the non-discriminating-verification
-failure this project exists to prevent.
+- Independent ground truth. The model never sees the document text: it is
+  fetched live from the URL the model selects, not supplied by caller or
+  model. The legitimacy `allowlist` is caller-supplied and checked against
+  the model's URL independently. A hallucinated source cannot validate
+  itself.
+- No-fallback rule (firm). If search returns nothing, the LLM is not called
+  for that attempt (status "no_search_results"), and there is no path back
+  to proposing a URL from model memory — such a fallback would be a standing
+  escape hatch that reintroduces the hallucination risk search removes. It
+  counts toward the hard cap and the no-progress rule like any other attempt.
+- Retry stopping by progress, not backoff. Stop after a hard cap of 3, or
+  early when two consecutive attempts share a stage and status without the
+  quote-match score improving. The failure mode is wrong content, not an
+  overloaded API, so waiting longer cannot help.
+- Cheap pre-check gate. A deterministic check rejects claims with no numeric
+  or exclusivity token before spending any API budget. Deliberately
+  incomplete: some vague claims pass and are caught later by quote_match.
 
-(Note: this is why the public function takes `allowlist` in addition to
-`claim_text`, rather than `claim_text` alone - the allowlist is the
-independent ground truth that the model's URL proposal is checked against.
-The document itself is now fetched live, not caller-supplied, which closes
-the gap where a test fixture could stand in for real page content.)
+Every attempt (not just the outcome) is appended to the JSONL log with its
+`stage_reached`, so a human can audit where each attempt stopped rather than
+trust the system's own verdict.
 
-SEARCH LAYER - why the model receives real URLs, not a blank prompt:
-
-An earlier design asked the model to propose a source URL purely from its
-training data. A live run showed this reliably produces plausible-but-
-nonexistent URLs (URLs that look real but return 404 or belong to unrelated
-content). Web search was added as the fix: before each LLM call, the
-pipeline runs a web search (Tavily) against the claim text and passes the
-real, verified-to-exist candidate URLs to the model. The model then selects
-the best candidate from those URLs rather than generating one from memory.
-
-If search returns no results, the attempt fails immediately with status
-"no_search_results" and the LLM is NOT called. This is a firm, permanent
-rule - not a soft default that can be revisited per-attempt. Falling back to
-model memory whenever search is empty would create a standing escape hatch
-that defeats the reason search was added: a model that knows the fallback
-exists will learn that unverified URLs are always available as a backstop.
-The "no_search_results" failure counts toward both the hard cap and the
-no-progress early-stop rule - an empty-search-results loop is just as much
-"no progress" as a repeated identical quote-match failure. See web_search.py
-for the choice of Tavily over the alternative search providers.
-
-FETCH LAYER - why the document is fetched live, not caller-supplied:
-
-After the model selects a URL (confirmed to be from the search results via
-url_compare.same_url), that URL is fetched live via page_fetch.fetch_page_text.
-The fetched text becomes the document that quote_match checks the proposed
-quote against. This closes the last gap in the pipeline: previously,
-extraction.py accepted `document` as a caller-supplied parameter, which
-meant the document content in tests was a hardcoded fixture rather than the
-real page at the model's proposed URL. Now, whether in tests or in a live
-run, the verification always runs against actual fetched content. Test
-isolation is preserved by injecting a fake `fetch_fn` (same pattern as
-`llm_fn` and `search_fn`) so unit tests can control the returned text without
-making real HTTP calls.
-
-PRE-CHECK GATE - cost control before any API call:
-
-Before calling the LLM or running a search, a cheap deterministic check
-rejects claims that are too vague to verify (no numeric token, no
-exclusivity/ranking word). This gate is DELIBERATELY INCOMPLETE: the
-exclusivity word list is short and known not to be exhaustive. Some
-genuinely vague claims will pass the gate and only get caught later when
-quote_match finds nothing - that is an accepted tradeoff, not a bug. The
-gate's only job is to cheaply catch the clearest unverifiable claims before
-spending any API budget on them.
-
-RETRY STOPPING - why "no progress", not a backoff delay:
-
-Retries stop on a hard cap of 3 attempts, OR early if two consecutive
-attempts share the same stage_reached and the same status without the
-quote-match score meaningfully improving. Reaching a later pipeline stage
-(e.g. advancing from fetch_failed to verification_completed) always counts
-as progress even if the later stage then fails. The failure mode being
-managed here is WRONG CONTENT (a hallucinated quote, a bad URL), not an
-overloaded or rate-limited API - so exponential backoff does not apply.
-Waiting longer does not make a non-existent source exist. Repeated retries
-that aren't measurably moving toward "verified" are a signal that the claim
-may not be backed by a findable source at all, and continuing just burns
-API cost.
-
-STRUCTURED LOG - so a human can audit failures, not just trust the verdict:
-
-Every attempt (not only the final outcome) is appended to a JSON-lines log
-in logs/. Each log entry includes a stage_reached field indicating how far
-that attempt got ("no_search_results", "malformed_llm_response",
-"url_not_from_search_results", "fetch_failed", or
-"verification_completed"), so a human scanning the log
-can immediately see where each attempt stopped. The purpose is to let a
-human review failures later and spot patterns (a certain kind of claim
-failing the same way), and to independently check whether a status was
-actually correct rather than trusting the system's own verdict about its
-own failure - the same "don't trust a confident result without the evidence
-to check it" principle the rest of this project is built on.
+Full design trail — rejected search providers, the model-choice rationale,
+and the live run that first demonstrated the failure mode — is in
+adr/0006-extraction.md.
 """
 
 import json
@@ -111,6 +46,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Protocol
 
 from dotenv import load_dotenv
 
@@ -194,9 +130,22 @@ def is_verifiable_claim(claim_text: str) -> bool:
     return bool(_EXCLUSIVITY_PATTERN.search(claim_text.lower()))
 
 
+class _ProgressAttempt(Protocol):
+    """
+    The structural contract no_meaningful_progress() depends on: any record
+    carrying these three fields can be passed to it. Both AttemptRecord
+    (Bucket A) and criterion_evidence.CriterionAttemptRecord (Bucket B)
+    satisfy this without a shared base class.
+    """
+
+    stage_reached: str
+    status: str
+    top_score: float | None
+
+
 def no_meaningful_progress(
-    previous: AttemptRecord,
-    current: AttemptRecord,
+    previous: _ProgressAttempt,
+    current: _ProgressAttempt,
     threshold: float = NO_PROGRESS_SCORE_DELTA,
 ) -> bool:
     """
@@ -340,7 +289,7 @@ def _default_llm_call(
         ],
         response_format={"type": "json_object"},
     )
-    data = json.loads(response.choices[0].message.content)
+    data = json.loads(response.choices[0].message.content or "")
     return {"url": data["url"], "quote": data["quote"]}
 
 

@@ -152,7 +152,7 @@ def _default_finding_llm_call(document: str, claim_text: str) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def find_source_finding(
@@ -284,7 +284,7 @@ def _default_url_selection_llm_call(
         ],
         response_format={"type": "json_object"},
     )
-    data = json.loads(response.choices[0].message.content)
+    data = json.loads(response.choices[0].message.content or "")
     return {"url": data["url"]}
 
 

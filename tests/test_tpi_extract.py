@@ -116,7 +116,9 @@ def test_parse_confirmed_totalenergies_structure():
     No dropdown in fixture — historical_levels is None (no attempt made).
     """
     html = _build_html(_totalenergies_indicators())
-    with patch("agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True
@@ -193,7 +195,9 @@ def test_company_not_in_tpi_universe_on_404():
 def test_wrong_indicator_count_returns_unexpected_indicator_count():
     """20 indicators instead of 23 — refuse to guess, don't truncate/pad."""
     html = _build_html(["yes"] * 20)
-    with patch("agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("somecompany")
 
     assert result["success"] is False
@@ -213,7 +217,9 @@ def test_unexpected_class_value_returns_unexpected_indicator_value():
     bad_div = '<div class="mq-answer level3">weird</div>'
     html = f"<html><body>{divs_good}{bad_div}</body></html>"
 
-    with patch("agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("somecompany")
 
     assert result["success"] is False
@@ -222,7 +228,9 @@ def test_unexpected_class_value_returns_unexpected_indicator_value():
 
 def test_overall_level_none_when_not_in_page():
     html = _build_html(_totalenergies_indicators(), include_level=False)
-    with patch("agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True
@@ -242,7 +250,9 @@ def test_not_applicable_indicator_is_parsed_correctly():
     """
     indicators = ["yes"] * 22 + ["not-applicable"]
     html = _build_html(indicators)
-    with patch("agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("antofagasta")
 
     assert result["success"] is True, (

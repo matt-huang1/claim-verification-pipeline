@@ -356,7 +356,8 @@ def test_parse_error_when_extraction_raises_after_successful_download():
     )
     with patch("requests.get", return_value=mock_resp):
         with patch(
-            "agent_eval.page_fetch.PdfReader", side_effect=Exception("malformed PDF stream")
+            "agent_eval.page_fetch.PdfReader",
+            side_effect=Exception("malformed PDF stream"),
         ):
             result = fetch_page_text("https://tsmc.com/corrupted.pdf")
     assert result["success"] is False
