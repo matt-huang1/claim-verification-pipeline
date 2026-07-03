@@ -57,8 +57,11 @@ python -m http.server 8080       # serve from repo root
 ```
 
 The browser reads `data/results.json` if present, and otherwise falls back to the
-bundled `data/sample_results.json` (anonymised) so a fresh clone shows a working
-example immediately — this is the state shown above.
+bundled `data/sample_results.json` — a real, committed pipeline run against live
+sources (the same eight claims across all four buckets) — so a fresh clone shows
+genuine verified results immediately. This is the state shown above. Every entry
+is drawn from publicly available primary sources; see the independence note at the
+top of this README.
 
 ## Development
 

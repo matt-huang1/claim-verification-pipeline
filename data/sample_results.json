@@ -1,263 +1,450 @@
 [
- {
-  "company": "Helios Materials",
-  "label": "Helios Materials \u2014 RE100 commitment (Bucket A)",
-  "bucket": "A",
-  "outcome": "verified",
-  "triage_reasoning": "This concerns a specific public commitment (a target date for 100% renewable energy). A single authoritative source (the company's own disclosure) would establish this present-tense fact, so it is a precisely bounded claim (bucket_a).",
-  "tag": {
-   "claim_id": "helios-a-re100",
-   "bucket": "A",
-   "claim_text": "Helios Materials is moving its target for 100 percent renewable energy consumption for all global operations forward to 2040 from 2050",
-   "overall_status": "verified",
-   "domain_evidence": {
-    "domain": "pr.heliosmaterials.example",
-    "matched_entry": "heliosmaterials.example",
-    "passed": true
-   },
-   "quote_evidence": {
-    "candidate_count": 3,
-    "status": "unique",
-    "top_score": 100.0,
-    "matched_text": "To respond to climate change, Helios Materials today announced an acceleration of its RE100 timetable, moving its target for 100% renewable energy consumption for all global operations forward to 2040 from 2050."
-   },
-   "criteria_evidence": null,
-   "tpi_evidence": null,
-   "source_plurality_evidence": null,
-   "assumptions_evidence": null,
-   "timestamp": "2026-01-01T00:00:00+00:00"
-  }
- },
- {
-  "company": "Aurora Grid",
-  "label": "Aurora Grid \u2014 net-zero criteria (Bucket B)",
-  "bucket": "B",
-  "outcome": "criteria_evidence_gathered",
-  "triage_reasoning": "This claim asserts alignment with a multi-criterion net-zero standard. It cannot be settled by one quote; evidence must be gathered against each criterion, so it is a bucket_b claim.",
-  "tag": {
-   "claim_id": "aurora-b-netzero",
-   "bucket": "B",
-   "claim_text": "Aurora Grid's decarbonisation plan meets the ambition and targets criteria of the net-zero standard",
-   "overall_status": "criteria_evidence_gathered",
-   "domain_evidence": null,
-   "quote_evidence": null,
-   "criteria_evidence": [
-    {
-     "criterion_name": "ambition",
-     "criterion_text": "A long term goal consistent with the global goal of achieving net zero by 2050.",
-     "evidence_text": "To achieve its goal of net zero by 2050, Aurora Grid will strengthen green innovation and actively adopt renewable energy.",
-     "evidence_source_url": "https://pr.auroragrid.example/news/101",
-     "evidence_source_type": "official"
+  {
+    "outcome": "verified",
+    "bucket": "A",
+    "triage_reasoning": "This is a specific, publicly announced commitment by a company (to move to 100% renewable energy by 2040 from 2050). There should be a single authoritative source (e.g., TSMC's press release or sustainability report) that confirms the target change.",
+    "tag": {
+      "claim_id": "tsmc-a-re100",
+      "claim_text": "TSMC is moving its target for 100 percent renewable energy consumption for all global operations forward to 2040 from 2050",
+      "bucket": "A",
+      "timestamp": "2026-07-03T18:00:08.451748+00:00",
+      "overall_status": "verified",
+      "domain_evidence": {
+        "domain": "pr.tsmc.com",
+        "passed": true,
+        "matched_entry": "tsmc.com"
+      },
+      "quote_evidence": {
+        "status": "unique",
+        "top_score": 100.0,
+        "matched_text": "ep. 15, 2023 – To respond to climate change and mitigate climate impact, TSMC (TWSE: 2330, NYSE: TSM) today announced an acceleration of its RE100 sustainability timetable, moving its target for 100% renewable energy consumption for all global operations forward to 2040 from 2050. TSMC also rais",
+        "candidate_count": 3
+      },
+      "criteria_evidence": null,
+      "tpi_evidence": null,
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
     },
-    {
-     "criterion_name": "targets",
-     "criterion_text": "Short and medium term targets for scope 1, 2 and material scope 3 emissions in line with a science-based net-zero pathway.",
-     "evidence_text": "Using 2025 as a baseline, Aurora Grid commits to a 42% reduction in scope 1 and 2 emissions by 2030.",
-     "evidence_source_url": "https://pr.auroragrid.example/news/102",
-     "evidence_source_type": "official"
-    }
-   ],
-   "tpi_evidence": null,
-   "source_plurality_evidence": null,
-   "assumptions_evidence": null,
-   "timestamp": "2026-01-01T00:00:00+00:00"
-  }
- },
- {
-  "company": "TotalMeridian Energy",
-  "label": "TotalMeridian Energy \u2014 TPI level (Bucket B)",
-  "bucket": "B",
-  "outcome": "tpi_data_fetched",
-  "triage_reasoning": "This claim references a company's transition-pathway assessment level. The authoritative record is a third-party dataset, so the pipeline fetches the TPI data (bucket_b).",
-  "tag": {
-   "claim_id": "meridian-b-tpi",
-   "bucket": "B",
-   "claim_text": "TotalMeridian Energy is assessed at the highest management-quality level in the transition-pathway framework",
-   "overall_status": "tpi_data_fetched",
-   "domain_evidence": null,
-   "quote_evidence": null,
-   "criteria_evidence": null,
-   "tpi_evidence": {
-    "company_tpi_id": "9001",
-    "company_slug": "totalmeridian",
-    "overall_level": 5,
-    "current_level_date": "15/12/2025",
-    "max_level": 5,
-    "indicator_results": {
-     "1": "yes",
-     "2": "yes",
-     "3": "yes",
-     "4": "yes",
-     "5": "yes",
-     "6": "yes",
-     "7": "yes",
-     "8": "yes",
-     "9": "yes",
-     "10": "yes",
-     "11": "yes",
-     "12": "yes",
-     "13": "yes",
-     "14": "yes",
-     "15": "yes",
-     "16": "yes",
-     "17": "yes",
-     "18": "yes",
-     "19": "yes",
-     "20": "yes",
-     "21": "no",
-     "22": "no",
-     "23": "yes"
+    "label": "TSMC — RE100 commitment (Bucket A)",
+    "company": "TSMC"
+  },
+  {
+    "outcome": "definitional_ambiguity_unresolved",
+    "bucket": "C",
+    "triage_reasoning": "The claim hinges on market definitions (what counts as the 'foundry market'), which are not universally standardized; different analysts use different scopes and methodologies, so there is no single authoritative figure.",
+    "tag": {
+      "claim_id": "tsmc-c-foundry-market",
+      "claim_text": "TSMC has roughly 60% of the foundry market",
+      "bucket": "C",
+      "timestamp": "2026-07-03T18:04:11.762993+00:00",
+      "overall_status": "definitional_ambiguity_unresolved",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": null,
+      "tpi_evidence": null,
+      "source_plurality_evidence": {
+        "sources_checked": 1,
+        "groups": [],
+        "distinct_sources": [
+          {
+            "source_url": "https://averroes.ai/blog/top-10-semiconductor-foundries",
+            "reasoning": "Only source with a stated definition — no peer to compare against."
+          }
+        ],
+        "unresolved": [],
+        "no_definition_sources": [],
+        "failed_reconciliation": [],
+        "notes": ""
+      },
+      "assumptions_evidence": null
     },
-    "historical_levels": [
-     [
-      "01/07/2018",
-      3
-     ],
-     [
-      "01/09/2020",
-      4
-     ],
-     [
-      "01/11/2022",
-      4
-     ],
-     [
-      "01/12/2024",
-      5
-     ],
-     [
-      "15/12/2025",
-      5
-     ]
-    ]
-   },
-   "source_plurality_evidence": null,
-   "assumptions_evidence": null,
-   "timestamp": "2026-01-01T00:00:00+00:00"
-  }
- },
- {
-  "company": "Northwind Foundry",
-  "label": "Northwind Foundry \u2014 'leading foundry' claim (Bucket C)",
-  "bucket": "C",
-  "outcome": "definitional_ambiguity_unresolved",
-  "triage_reasoning": "The claim rests on the contested term 'leading', which different sources define differently. Resolving it requires comparing definitions across sources (bucket_c).",
-  "tag": {
-   "claim_id": "northwind-c-leading",
-   "bucket": "C",
-   "claim_text": "Northwind Foundry is a leading semiconductor foundry",
-   "overall_status": "definitional_ambiguity_unresolved",
-   "domain_evidence": null,
-   "quote_evidence": null,
-   "criteria_evidence": null,
-   "tpi_evidence": null,
-   "source_plurality_evidence": {
-    "sources_checked": 1,
-    "groups": [],
-    "distinct_sources": [
-     {
-      "source_url": "https://example.com/blog/top-10-foundries",
-      "reasoning": "Only source with a stated definition \u2014 no peer to compare against."
-     }
-    ],
-    "unresolved": [],
-    "no_definition_sources": [],
-    "failed_reconciliation": [],
-    "notes": ""
-   },
-   "assumptions_evidence": null,
-   "timestamp": "2026-01-01T00:00:00+00:00"
-  }
- },
- {
-  "company": "Cascade Semiconductor",
-  "label": "Cascade Semiconductor \u2014 advanced-node foundry share (Bucket C)",
-  "bucket": "C",
-  "outcome": "disambiguated",
-  "triage_reasoning": "The claim depends on the contested scope of 'foundry market', which sources bound differently (leading-edge only vs. all nodes). Settling it requires comparing definitions across sources (bucket_c).",
-  "tag": {
-   "claim_id": "cascade-c-advanced-node",
-   "bucket": "C",
-   "claim_text": "Cascade Semiconductor holds roughly 30% of the advanced-node foundry market",
-   "overall_status": "disambiguated",
-   "domain_evidence": null,
-   "quote_evidence": null,
-   "criteria_evidence": null,
-   "tpi_evidence": null,
-   "source_plurality_evidence": {
-    "sources_checked": 3,
-    "groups": [
-     {
-      "member_source_urls": [
-       "https://example.com/analyst/foundry-q4-share",
-       "https://example.com/research/leading-edge-capacity"
+    "label": "TSMC — foundry market share (Bucket C)",
+    "company": "TSMC"
+  },
+  {
+    "outcome": "criteria_evidence_gathered",
+    "bucket": "B",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "tsmc-b-nzif",
+      "claim_text": "TSMC NZIF alignment assessment",
+      "bucket": "B",
+      "timestamp": "2026-07-03T18:06:38.903205+00:00",
+      "overall_status": "criteria_evidence_gathered",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": [
+        {
+          "criterion_name": "ambition",
+          "criterion_text": "A long term goal consistent with the global goal of achieving net zero by 2050.",
+          "evidence_text": "To drive sustainable growth, TSMC has outlined a blueprint for achieving net-zero emissions. Key milestones include peaking carbon emissions in 2025, reducing them to 2020 levels by 2030 with a target of using 60% renewable energy for global operations (RE60), achieving RE100 by 2040, and reaching net-zero emissions by 2050.",
+          "evidence_source_url": "https://pr.tsmc.com/english/news/3227",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "targets",
+          "criterion_text": "Short and medium term targets for scope 1, 2 and material scope 3 emissions in line with science-based ‘net zero’ pathway. These may be absolute, or intensity based: a) where available, a sectoral decarbonisation / carbon budget approach should be used; b) minimum for other assets is a global or regional average pathway.",
+          "evidence_text": "Using 2025 as a baseline, TSMC commits to achieving absolute reduction targets for scope 1, 2, and 3 emissions aligned with the SBTi Corporate Net-Zero Standard within the next decade.",
+          "evidence_source_url": "https://pr.tsmc.com/english/news/3227",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "disclosure",
+          "criterion_text": "Disclosure of scope 1 and 2 emissions, and disclosure of material scope 3, in line with regulatory requirements where applicable or the PCAF Standard.",
+          "evidence_text": "TSMC GHG Emissions in Recent Two Years\nYear Scope\nScope 1 Scope 2\nVerification \nParty\nVerification \nGuideline\nVerification \nStatementTotal Emissions \n(Metric Ton \nCO2e)\nIntensity (Metric \nTon CO2e / M \nNTD)\nTotal Emissions \n(Metric Ton \nCO2e)\nIntensity (Metric \nTon CO2e / M \nNTD)\n2025\nParent Company 1,872,907 0.49 11,130,187 2.94 DNV ISO 14064-3 Reasonable Assurance\nVisEra Technologies Company \nLtd.\n6,527 0.73 29,665 3.32 DNV ISO 14064-3 Reasonable Assurance\nTSMC China Company \nLimited\n128,580 4.97 0 0 DNV ISO 14064-3 Reasonable Assurance\nTSMC Nanjing Company \nLimited\n69,139 0.98 0 0 DNV ISO 14064-3 Reasonable Assurance\nTSMC Washington, LLC 51,899 7.21 0 0 AMN ISO 14064-3 Reasonable Assurance\nTSMC Arizona Corporation 27,440 0.41 0 0 Has not been verified \nyet\nJASM 21,246 1.43 0 0 DNV ISO 14064-3 Reasonable Assurance\n3DIC 203 0.18 0 0 DNV ISO 14064-3 Reasonable Assurance\n2024\nParent Company 1,581,312 0.55 10,926,644 3.79 DNV ISO 14064-3 Reasonable Assurance\nVisEra Technologies Company \nLtd.\n5,043 0.5 30,753 3.07 DNV ISO 14064-3 Reasonable Assurance\nTSMC China Company \nLimited\n118,141 4.56 0 0 DNV ISO 14064-3 Reasonable Assurance\nTSMC Nanjing Company \nLimited\n53,216 0.77 0 0 DNV ISO 14064-3 Reasonable Assurance\nTSMC Washington, LLC 54,238 9.12 0 0 AMN ISO 14064-3 Reasonable Assurance\nJASM 14,241 131.37 0 0 DNV ISO 14064-3 Reasonable Assurance\n3DIC 196 0.21 0 0 DNV ISO 14064-3 Reasonable Assurance",
+          "evidence_source_url": "https://investor.tsmc.com/static/annualReports/2025/english/pdf/2025_tsmc_ar_e_ch7.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "governance",
+          "criterion_text": "Governance/management responsibility for targets and decarbonisation plan.",
+          "evidence_text": "The ESG Steering Committee at TSMC serves as the apex of ESG decision-making, chaired by the Company’s Chairman, with the Chairperson of the ESG Committee acting as the executive secretary. This committee, comprising senior executives from a wide variety of functions, collaboratively examines ESG issues critical to the Company’s operations and establishes short-, medium-, and long-term strategic directions and development goals, aligning with the United Nations sustainable development goals (SDGs), while leveraging the Company’s core strengths.\nThe ESG Committee, operating under the guidance of the ESG Steering Committee’s resolutions, is responsible for integrating resources and coordinating communication across various departments. It oversees the dedicated ESG department (established in 2019 and renamed in 2021) and engages cross-organizational representatives to collaboratively identify sustainability issues pertinent to the Company’s operations and stakeholders’ interests. Task forces are established based on identified issues to develop corresponding strategies, goals, and action plans. Progress is monitored through quarterly meetings to ensure effective implementation of ESG strategies in TSMC’s daily operations.",
+          "evidence_source_url": "https://investor.tsmc.com/static/annualReports/2024/english/pdf/2024_tsmc_ar_e_ch7.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "decarbonisation_plan",
+          "criterion_text": "Development and implementation of a quantified plan setting out a decarbonisation strategy for scope 1, 2, and material scope 3.",
+          "evidence_text": "Using 2025 as a baseline, TSMC commits to achieving absolute reduction targets for scope 1, 2, and 3 emissions aligned with the SBTi Corporate Net-Zero Standard within the next decade.",
+          "evidence_source_url": "https://pr.tsmc.com/english/news/3227",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "emissions_performance",
+          "criterion_text": "Current and forecast emissions performance (scope 1, 2 and material scope 3) relative to a net zero benchmark/pathway or an asset’s science-based target. An aligned asset would need to see emissions decline consistent with targets set to converge an asset with a net zero pathway.",
+          "evidence_text": "Using 2025 as a baseline, TSMC commits to achieving absolute reduction targets for scope 1, 2, and 3 emissions aligned with the SBTi Corporate Net-Zero Standard within the next decade.",
+          "evidence_source_url": "https://pr.tsmc.com/english/news/3227",
+          "evidence_source_type": "official"
+        }
       ],
-      "shared_definition_label": "Advanced-node (7nm and below) logic foundry capacity, excluding trailing-edge and in-house IDM output",
-      "reasoning": "Both sources bound the market to leading-edge (7nm and below) logic foundry revenue and explicitly exclude trailing-edge nodes, so their 28% and 31% figures describe the same real-world scope despite different wording."
-     }
-    ],
-    "distinct_sources": [
-     {
-      "source_url": "https://example.com/news/total-foundry-market",
-      "reasoning": "Defines 'foundry market' as all outsourced wafer fabrication across every node, a broader scope than the leading-edge group; its ~18% figure measures a different thing and is kept distinct rather than averaged in."
-     }
-    ],
-    "unresolved": [],
-    "no_definition_sources": [],
-    "failed_reconciliation": [],
-    "notes": "One group of two sources shares a leading-edge definition; a third source uses an all-node definition and is deliberately not merged."
-   },
-   "assumptions_evidence": null,
-   "timestamp": "2026-01-01T00:00:00+00:00"
+      "tpi_evidence": null,
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
+    },
+    "label": "TSMC — NZIF criteria (Bucket B)",
+    "company": "TSMC"
+  },
+  {
+    "outcome": "criteria_evidence_gathered",
+    "bucket": "B",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "totalenergies-b-nzif",
+      "claim_text": "TotalEnergies NZIF alignment assessment",
+      "bucket": "B",
+      "timestamp": "2026-07-03T18:09:15.509092+00:00",
+      "overall_status": "criteria_evidence_gathered",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": [
+        {
+          "criterion_name": "ambition",
+          "criterion_text": "A long term goal consistent with the global goal of achieving net zero by 2050.",
+          "evidence_text": "Today, we are announcing our new Climate Ambition to get to Net Zero by 2050 - together with society.",
+          "evidence_source_url": "https://corporate.totalenergies.cn/en/news/total-adopts-new-climate-ambition-get-net-zero-2050",
+          "evidence_source_type": "third_party"
+        },
+        {
+          "criterion_name": "targets",
+          "criterion_text": "Short and medium term targets for scope 1, 2 and material scope 3 emissions in line with science-based ‘net zero’ pathway. These may be absolute, or intensity based: a) where available, a sectoral decarbonisation / carbon budget approach should be used; b) minimum for other assets is a global or regional average pathway.",
+          "evidence_text": "TotalEnergies' ambition is to reach carbon neutrality by 2050 in its global operations (Scope 1+2) and targets - 40% reduction of its net Scope 1+2 emissions by 2030 vs 2015.\nTotalEnergies aims for near zero methane emissions in its operations by 2030 and targets - 80% of its global operated emissions by 2030 or sooner vs 2020.\nTotalEnergies supports its customers in their energy transition and puts on the market a mix of energies with a lower carbon intensity year after year . It targets - 25% reduction of its lifecycle carbon intensity* by 2030 vs 2015.",
+          "evidence_source_url": "https://totalenergies.com/system/files/documents/totalenergies_sustainability-climate-2026-progress-report-presentation_2026_en.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "disclosure",
+          "criterion_text": "Disclosure of scope 1 and 2 emissions, and disclosure of material scope 3, in line with regulatory requirements where applicable or the PCAF Standard.",
+          "evidence_text": "This document makes reference to greenhouse gas emissions. The Company has control over emissions from the facilities it operates (Scope 1) and their indirect emissions from purchased energy (Scope 2). By contrast, it does not have control over emissions from the end use of its products by its customers (Scope 3), and trends in those emissions depend largely on external factors, such as government policies and customer choices (for additional information on the definition of Scope 1, 2 and 3, refer to the Universal Registration Document). The use in this document of expressions such as “carbon intensity of the products sold by the Company,” “carbon footprint of the Company” or similar expressions, insofar as they include Scope 3 emissions, does not mean that the latter are TotalEnergies emissions.",
+          "evidence_source_url": "https://totalenergies.com/system/files/documents/totalenergies_sustainability-climate-2026-progress-report-presentation_2026_en.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "governance",
+          "criterion_text": "Governance/management responsibility for targets and decarbonisation plan.",
+          "evidence_text": "At TotalEnergies, corporate governance is primarily the responsibility of the Board of Directors and General Management, headed by the Chairman and Chief Executive Officer, who chairs the Company's Executive Committee and Performance Management Committee.",
+          "evidence_source_url": "https://totalenergies.com/company/identity/governance",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "decarbonisation_plan",
+          "criterion_text": "Development and implementation of a quantified plan setting out a decarbonisation strategy for scope 1, 2, and material scope 3.",
+          "evidence_text": "TotalEnergies supports the Paris Agreement \nand sets out its ambition for carbon neutrality \ntogether with society within the framework of \nthe Paris Agreement’s objectives.\nTotalEnergies' ambition is to reach carbon \nneutrality by 2050 in its global operations \n(Scope 1+2) and targets - 40% reduction of its \nnet Scope 1+2 emissions by 2030 vs 2015.\nTotalEnergies aims for near zero methane \nemissions in its operations by 2030 and \ntargets - 80% of its global operated emissions \nby 2030 or sooner vs 2020.\nTotalEnergies supports its customers in their \nergy transition and puts on the market a mix \nof energies with a lower carbon intensity year \nafter year . It targets - 25% reduction of its \nlifecycle carbon intensity* by 2030 vs 2015.",
+          "evidence_source_url": "https://totalenergies.com/system/files/documents/totalenergies_sustainability-climate-2026-progress-report-presentation_2026_en.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "emissions_performance",
+          "criterion_text": "Current and forecast emissions performance (scope 1, 2 and material scope 3) relative to a net zero benchmark/pathway or an asset’s science-based target. An aligned asset would need to see emissions decline consistent with targets set to converge an asset with a net zero pathway.",
+          "evidence_text": "TotalEnergies' ambition is to reach carbon neutrality by 2050 in its global operations (Scope 1+2) and targets - 40% reduction of its net Scope 1+2 emissions by 2030 vs 2015.",
+          "evidence_source_url": "https://totalenergies.com/system/files/documents/totalenergies_sustainability-climate-2026-progress-report-presentation_2026_en.pdf",
+          "evidence_source_type": "official"
+        }
+      ],
+      "tpi_evidence": null,
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
+    },
+    "label": "TotalEnergies — NZIF criteria (Bucket B)",
+    "company": "TotalEnergies"
+  },
+  {
+    "outcome": "tpi_data_fetched",
+    "bucket": "B",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "totalenergies-b-tpi",
+      "claim_text": "totalenergies TPI Management Quality assessment",
+      "bucket": "B",
+      "timestamp": "2026-07-03T18:09:16.305292+00:00",
+      "overall_status": "tpi_data_fetched",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": null,
+      "tpi_evidence": {
+        "company_tpi_id": "1216",
+        "company_slug": "totalenergies",
+        "overall_level": 5,
+        "current_level_date": "15/12/2025",
+        "indicator_results": {
+          "1": "yes",
+          "2": "yes",
+          "3": "yes",
+          "4": "yes",
+          "5": "yes",
+          "6": "yes",
+          "7": "yes",
+          "8": "yes",
+          "9": "yes",
+          "10": "yes",
+          "11": "yes",
+          "12": "yes",
+          "13": "yes",
+          "14": "yes",
+          "15": "yes",
+          "16": "yes",
+          "17": "yes",
+          "18": "yes",
+          "19": "yes",
+          "20": "yes",
+          "21": "no",
+          "22": "no",
+          "23": "yes"
+        },
+        "historical_levels": [
+          [
+            "01/07/2017",
+            3
+          ],
+          [
+            "01/07/2018",
+            4
+          ],
+          [
+            "01/09/2019",
+            4
+          ],
+          [
+            "01/10/2020",
+            4
+          ],
+          [
+            "01/11/2021",
+            4
+          ],
+          [
+            "01/09/2022",
+            4
+          ],
+          [
+            "01/11/2023",
+            4
+          ],
+          [
+            "01/12/2024",
+            5
+          ],
+          [
+            "15/12/2025",
+            5
+          ]
+        ],
+        "max_level": 5
+      },
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
+    },
+    "label": "TotalEnergies — TPI Management Quality (Bucket B)",
+    "company": "TotalEnergies"
+  },
+  {
+    "outcome": "criteria_evidence_gathered",
+    "bucket": "B",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "antofagasta-b-nzif",
+      "claim_text": "Antofagasta NZIF alignment assessment",
+      "bucket": "B",
+      "timestamp": "2026-07-03T18:11:34.648410+00:00",
+      "overall_status": "criteria_evidence_gathered",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": [
+        {
+          "criterion_name": "ambition",
+          "criterion_text": "A long term goal consistent with the global goal of achieving net zero by 2050.",
+          "evidence_text": "In line with science and the Paris Agreement’s goals, as a Group we are committed to reducing our greenhouse gas (GHG) emissions in the short and medium term and achieving carbon neutrality by 2050 (or sooner if technology permits).",
+          "evidence_source_url": "https://www.antofagasta.co.uk/media/4601/climate-change-report_fv3-1.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "targets",
+          "criterion_text": "Short and medium term targets for scope 1, 2 and material scope 3 emissions in line with science-based ‘net zero’ pathway. These may be absolute, or intensity based: a) where available, a sectoral decarbonisation / carbon budget approach should be used; b) minimum for other assets is a global or regional average pathway.",
+          "evidence_text": "Scope 1 and 2 (combined): targeting a 50% reduction by 2035 (on basis of absolute emissions) Scope 3: targeting a 10% reduction by 2030 (on basis of a no-action scenario of projected emissions)",
+          "evidence_source_url": "https://www.antofagasta.co.uk/investors/news/2024/updated-emissions-targets-50-reduction-in-scope-1-and-2-emissions-by-2035",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "governance",
+          "criterion_text": "Governance/management responsibility for targets and decarbonisation plan.",
+          "evidence_text": "The Climate Change Committee, formed in 2021, supports the implementation, monitoring, and continuous improvement of the strategy. One of its main objectives is to maximise participation across different areas and levels of the organisation in this challenge. Our Board of Directors is ultimately responsible for Antofagasta Minerals’ climate-related objectives and strategy.",
+          "evidence_source_url": "https://www.antofagasta.co.uk/media/4799/antofagasta-sustainability-report-2024.pdf",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "decarbonisation_plan",
+          "criterion_text": "Development and implementation of a quantified plan setting out a decarbonisation strategy for scope 1, 2, and material scope 3.",
+          "evidence_text": "Progress towards Decarbonisation At Antofagasta we have the ambition to reduce our Greenhouse Gas (GHG) emissions in the short and medium term, and to achieving carbon neutrality by 2050, or sooner if technology allows. Our comprehensive approach to decarbonisation involves our mining site operational teams, our corporate teams and our suppliers. Scope 1 & Scope 2 2035 goa l - 50% emissions reduction with 2020 as baseline Scope 3 2030 goal - 10% emissions reduction with a projection baseline using 2022 emissions criteria Concurrently, we are aligning our technological needs with the operational requirements of our mine plan.",
+          "evidence_source_url": "https://www.antofagasta.co.uk/sustainability/climate-change",
+          "evidence_source_type": "official"
+        },
+        {
+          "criterion_name": "emissions_performance",
+          "criterion_text": "Current and forecast emissions performance (scope 1, 2 and material scope 3) relative to a net zero benchmark/pathway or an asset’s science-based target. An aligned asset would need to see emissions decline consistent with targets set to converge an asset with a net zero pathway.",
+          "evidence_text": "“We are proud to announce today’s updated targets, which follows detailed work to further understand our current emissions footprint, relevant technologies to support decarbonisation and our pathway to net-zero copper production.”",
+          "evidence_source_url": "https://www.antofagasta.co.uk/investors/news/2024/updated-emissions-targets-50-reduction-in-scope-1-and-2-emissions-by-2035",
+          "evidence_source_type": "official"
+        }
+      ],
+      "tpi_evidence": null,
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
+    },
+    "label": "Antofagasta — NZIF criteria (Bucket B)",
+    "company": "Antofagasta"
+  },
+  {
+    "outcome": "tpi_data_fetched",
+    "bucket": "B",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "antofagasta-b-tpi",
+      "claim_text": "antofagasta TPI Management Quality assessment",
+      "bucket": "B",
+      "timestamp": "2026-07-03T18:11:35.431262+00:00",
+      "overall_status": "tpi_data_fetched",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": null,
+      "tpi_evidence": {
+        "company_tpi_id": "2739",
+        "company_slug": "antofagasta",
+        "overall_level": 3,
+        "current_level_date": "15/12/2025",
+        "indicator_results": {
+          "1": "yes",
+          "2": "yes",
+          "3": "yes",
+          "4": "yes",
+          "5": "yes",
+          "6": "yes",
+          "7": "yes",
+          "8": "yes",
+          "9": "yes",
+          "10": "no",
+          "11": "yes",
+          "12": "not-applicable",
+          "13": "yes",
+          "14": "yes",
+          "15": "yes",
+          "16": "yes",
+          "17": "yes",
+          "18": "yes",
+          "19": "yes",
+          "20": "yes",
+          "21": "no",
+          "22": "yes",
+          "23": "yes"
+        },
+        "historical_levels": [
+          [
+            "01/12/2024",
+            3
+          ],
+          [
+            "15/12/2025",
+            3
+          ]
+        ],
+        "max_level": 5
+      },
+      "source_plurality_evidence": null,
+      "assumptions_evidence": null
+    },
+    "label": "Antofagasta — TPI Management Quality (Bucket B)",
+    "company": "Antofagasta"
+  },
+  {
+    "outcome": "assumptions_explicit",
+    "bucket": "D",
+    "triage_reasoning": null,
+    "tag": {
+      "claim_id": "frontier-d-absence",
+      "claim_text": "Without verifiable emissions data or a stated net zero target, Frontier Lithium cannot currently be classified as a transition enabler — the inputs the frameworks require do not yet exist.",
+      "bucket": "D",
+      "timestamp": "2026-07-03T18:11:59.391546+00:00",
+      "overall_status": "assumptions_explicit",
+      "domain_evidence": null,
+      "quote_evidence": null,
+      "criteria_evidence": null,
+      "tpi_evidence": null,
+      "source_plurality_evidence": null,
+      "assumptions_evidence": {
+        "assumptions": [
+          {
+            "text": "Frameworks require verifiable emissions data to classify Frontier Lithium as a transition enabler",
+            "present_in_claim": true
+          },
+          {
+            "text": "Frameworks require a stated net zero target to classify Frontier Lithium as a transition enabler",
+            "present_in_claim": true
+          },
+          {
+            "text": "The inputs required by the frameworks (verifiable emissions data and a stated net zero target) do not exist for Frontier Lithium",
+            "present_in_claim": true
+          }
+        ],
+        "causal_steps": [
+          {
+            "text": "Frameworks require verifiable emissions data to classify Frontier Lithium as a transition enabler",
+            "present_in_claim": true
+          },
+          {
+            "text": "Frameworks require a stated net zero target to classify Frontier Lithium as a transition enabler",
+            "present_in_claim": true
+          },
+          {
+            "text": "The inputs required by the frameworks (verifiable emissions data and a stated net zero target) do not exist for Frontier Lithium",
+            "present_in_claim": true
+          },
+          {
+            "text": "Therefore Frontier Lithium cannot currently be classified as a transition enabler",
+            "present_in_claim": true
+          }
+        ],
+        "notes": ""
+      }
+    },
+    "label": "Frontier Lithium — absence of evidence (Bucket D)",
+    "company": "Frontier Lithium"
   }
- },
- {
-  "company": "Frontier Lithium Works",
-  "label": "Frontier Lithium Works \u2014 transition enabler (Bucket D)",
-  "bucket": "D",
-  "outcome": "assumptions_explicit",
-  "triage_reasoning": "The claim is a conditional conclusion whose truth depends on assumptions about framework inputs. The pipeline surfaces those assumptions and causal steps rather than verifying a fact (bucket_d).",
-  "tag": {
-   "claim_id": "frontier-d-enabler",
-   "bucket": "D",
-   "claim_text": "Frontier Lithium Works cannot yet be classified as a transition enabler under current framework inputs",
-   "overall_status": "assumptions_explicit",
-   "domain_evidence": null,
-   "quote_evidence": null,
-   "criteria_evidence": null,
-   "tpi_evidence": null,
-   "source_plurality_evidence": null,
-   "assumptions_evidence": {
-    "assumptions": [
-     {
-      "text": "The frameworks used to classify a company as a transition enabler require verifiable emissions data.",
-      "present_in_claim": true
-     },
-     {
-      "text": "The frameworks require a stated net zero target.",
-      "present_in_claim": true
-     },
-     {
-      "text": "The required inputs do not currently exist for Frontier Lithium Works.",
-      "present_in_claim": true
-     },
-     {
-      "text": "Thus Frontier Lithium Works cannot be classified as a transition enabler under the current inputs.",
-      "present_in_claim": true
-     }
-    ],
-    "causal_steps": [
-     {
-      "text": "verifiable_emissions_data_missing \u2192 cannot_classify_as_transition_enabler",
-      "present_in_claim": true
-     },
-     {
-      "text": "stated_net_zero_target_missing \u2192 cannot_classify_as_transition_enabler",
-      "present_in_claim": true
-     }
-    ]
-   },
-   "timestamp": "2026-01-01T00:00:00+00:00"
-  }
- }
 ]
