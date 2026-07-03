@@ -5,7 +5,7 @@ same_url() tolerates trivial formatting differences (scheme, www., trailing
 slash) and treats everything else — particularly the path — as exact.
 """
 
-from url_compare import same_url
+from agent_eval.url_compare import same_url
 
 # --- matches (formatting differences only) ---
 

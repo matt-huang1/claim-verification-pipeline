@@ -1,3 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-evaluation-framework"
+version = "0.1.0"
+description = "Evidence-based evaluation pipeline for company climate claims."
+requires-python = ">=3.10"
+dependencies = [
+    "rapidfuzz>=3.0.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.28.0",
+    "pypdf>=3.0.0",
+    "tavily-python>=0.5.0",
+]
+
+[project.optional-dependencies]
+# Development and CI tooling — not required to import or run the package,
+# only to test, lint, type-check, and format it. Install with:
+#   pip install -e ".[dev]"
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=24.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.8.0",
+]
+
+[tool.setuptools]
+packages = ["agent_eval"]
+
 [tool.black]
 line-length = 88
 
@@ -5,3 +38,10 @@ line-length = 88
 markers = [
     "live_api: hits the real OpenAI API (costs money, needs network + key); run deliberately",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+# Third-party packages (rapidfuzz, openai, tavily, dotenv, pypdf) ship no type
+# stubs; ignore their missing imports rather than vendoring stubs we don't own.
+ignore_missing_imports = true
+files = ["agent_eval"]

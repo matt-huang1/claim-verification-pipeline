@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from bucket_triage import triage_claim
+from agent_eval.bucket_triage import triage_claim
 
 # ---------------------------------------------------------------------------
 # Unit tests — all use a mocked llm_fn

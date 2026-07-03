@@ -34,7 +34,7 @@ What is tested:
 import requests
 from unittest.mock import MagicMock, patch
 
-from page_fetch import fetch_page_text, HTML_MAX_BYTES, PDF_MAX_BYTES
+from agent_eval.page_fetch import fetch_page_text, HTML_MAX_BYTES, PDF_MAX_BYTES
 
 
 def _mock_response(
@@ -100,7 +100,7 @@ def test_successful_pdf_fetch_returns_text():
     mock_reader = MagicMock()
     mock_reader.pages = [mock_page]
     with patch("requests.get", return_value=mock_resp):
-        with patch("page_fetch.PdfReader", return_value=mock_reader):
+        with patch("agent_eval.page_fetch.PdfReader", return_value=mock_reader):
             result = fetch_page_text("https://tsmc.com/sustainability-report.pdf")
     assert result["success"] is True
     assert "2040" in result["text"]
@@ -197,7 +197,7 @@ def test_content_type_determined_by_header_not_url():
     mock_reader.pages = [mock_page]
     # URL has no extension — extension-based logic would not know this is a PDF
     with patch("requests.get", return_value=mock_resp):
-        with patch("page_fetch.PdfReader", return_value=mock_reader):
+        with patch("agent_eval.page_fetch.PdfReader", return_value=mock_reader):
             result = fetch_page_text("https://tsmc.com/download/document")
     assert result["success"] is True
     assert "annual report text" in result["text"]
@@ -306,7 +306,7 @@ def test_pdf_over_html_cap_but_under_pdf_cap_passes():
     mock_reader = MagicMock()
     mock_reader.pages = [mock_page]
     with patch("requests.get", return_value=mock_resp):
-        with patch("page_fetch.PdfReader", return_value=mock_reader):
+        with patch("agent_eval.page_fetch.PdfReader", return_value=mock_reader):
             result = fetch_page_text("https://tsmc.com/large-report.pdf")
     assert result["success"] is True
     assert result["failure_reason"] is None
@@ -356,7 +356,8 @@ def test_parse_error_when_extraction_raises_after_successful_download():
     )
     with patch("requests.get", return_value=mock_resp):
         with patch(
-            "page_fetch.PdfReader", side_effect=Exception("malformed PDF stream")
+            "agent_eval.page_fetch.PdfReader",
+            side_effect=Exception("malformed PDF stream"),
         ):
             result = fetch_page_text("https://tsmc.com/corrupted.pdf")
     assert result["success"] is False

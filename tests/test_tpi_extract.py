@@ -13,7 +13,7 @@ import pytest
 import requests
 from unittest.mock import MagicMock, patch
 
-from tpi_extract import (
+from agent_eval.tpi_extract import (
     extract_tpi_management_quality,
     build_tpi_evidence,
     build_tpi_claim_tag,
@@ -116,7 +116,9 @@ def test_parse_confirmed_totalenergies_structure():
     No dropdown in fixture — historical_levels is None (no attempt made).
     """
     html = _build_html(_totalenergies_indicators())
-    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True
@@ -137,7 +139,7 @@ def test_parse_confirmed_totalenergies_structure():
 
 def test_fetch_failure_network_error():
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=requests.exceptions.ConnectionError("unreachable"),
     ):
         result = extract_tpi_management_quality("somecompany")
@@ -151,7 +153,7 @@ def test_fetch_failure_network_error():
 
 def test_fetch_failure_timeout():
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=requests.exceptions.Timeout(),
     ):
         result = extract_tpi_management_quality("somecompany")
@@ -162,7 +164,7 @@ def test_fetch_failure_timeout():
 
 def test_fetch_failure_non_200_non_404():
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         return_value=_mock_response("<html></html>", status_code=500),
     ):
         result = extract_tpi_management_quality("somecompany")
@@ -181,7 +183,7 @@ def test_company_not_in_tpi_universe_on_404():
     network hiccup.
     """
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         return_value=_mock_response("<html></html>", status_code=404),
     ):
         result = extract_tpi_management_quality("patagonia")
@@ -193,7 +195,9 @@ def test_company_not_in_tpi_universe_on_404():
 def test_wrong_indicator_count_returns_unexpected_indicator_count():
     """20 indicators instead of 23 — refuse to guess, don't truncate/pad."""
     html = _build_html(["yes"] * 20)
-    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("somecompany")
 
     assert result["success"] is False
@@ -213,7 +217,9 @@ def test_unexpected_class_value_returns_unexpected_indicator_value():
     bad_div = '<div class="mq-answer level3">weird</div>'
     html = f"<html><body>{divs_good}{bad_div}</body></html>"
 
-    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("somecompany")
 
     assert result["success"] is False
@@ -222,7 +228,9 @@ def test_unexpected_class_value_returns_unexpected_indicator_value():
 
 def test_overall_level_none_when_not_in_page():
     html = _build_html(_totalenergies_indicators(), include_level=False)
-    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("totalenergies")
 
     assert result["success"] is True
@@ -242,7 +250,9 @@ def test_not_applicable_indicator_is_parsed_correctly():
     """
     indicators = ["yes"] * 22 + ["not-applicable"]
     html = _build_html(indicators)
-    with patch("tpi_extract.requests.get", return_value=_mock_response(html)):
+    with patch(
+        "agent_eval.tpi_extract.requests.get", return_value=_mock_response(html)
+    ):
         result = extract_tpi_management_quality("antofagasta")
 
     assert result["success"] is True, (
@@ -282,7 +292,7 @@ def test_dropdown_options_parse_date_and_id_correctly():
         f"<html><body>{_dropdown_div(company_id='42', options=options)}",
     )
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html_with_dropdown),
             _mock_json_response(_fake_chart_data()),
@@ -321,7 +331,7 @@ def test_chart_data_fetched_and_parsed_end_to_end():
     """
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_json_response(_fake_chart_data()),
@@ -353,7 +363,7 @@ def test_missing_current_level_series_does_not_affect_historical_or_max():
     ]
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_json_response(chart_without_current),
@@ -388,7 +398,7 @@ def test_historical_fetch_failure_preserves_indicator_results():
     """
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_response(b"", status_code=503),
@@ -422,7 +432,7 @@ def test_build_tpi_evidence_success_maps_fields_correctly():
     """
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_json_response(_fake_chart_data()),
@@ -456,7 +466,7 @@ def test_build_tpi_evidence_passes_through_company_not_in_tpi_universe():
     silently converted into a generic failure.
     """
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         return_value=_mock_response("<html></html>", status_code=404),
     ):
         result = build_tpi_evidence("patagonia")
@@ -475,7 +485,7 @@ def test_build_tpi_evidence_succeeds_when_historical_fetch_fails():
     """
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_response(b"", status_code=503),
@@ -499,7 +509,7 @@ def test_build_tpi_evidence_succeeds_when_historical_fetch_fails():
 
 def _fake_tpi_evidence():
     """Hand-built fake evidence — no fetch needed."""
-    from tag_schema import TPIManagementQualityEvidence
+    from agent_eval.tag_schema import TPIManagementQualityEvidence
 
     indicators = {i: "yes" for i in range(1, 24)}
     indicators[21] = "no"
@@ -534,7 +544,7 @@ def test_build_tpi_claim_tag_assembles_correct_tag():
 def test_fetch_and_tag_tpi_evidence_success():
     html = _build_html(_totalenergies_indicators(), include_dropdown=True)
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         side_effect=[
             _mock_response(html),
             _mock_json_response(_fake_chart_data()),
@@ -556,7 +566,7 @@ def test_fetch_and_tag_tpi_evidence_company_not_in_universe():
     evidence would be worse than a clean, honest "no tag, here's exactly why."
     """
     with patch(
-        "tpi_extract.requests.get",
+        "agent_eval.tpi_extract.requests.get",
         return_value=_mock_response("<html></html>", status_code=404),
     ):
         result = fetch_and_tag_tpi_evidence("claim-patagonia-tpi", "patagonia")

@@ -15,8 +15,8 @@ import os
 
 import pytest
 
-from run_pipeline import run_pipeline
-from tag_schema import ClaimTag
+from agent_eval.run_pipeline import run_pipeline
+from agent_eval.tag_schema import ClaimTag
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -586,7 +586,7 @@ def test_bucket_c_outcome_is_definitional_ambiguity_unresolved():
 
 
 def test_extraction_default_llm_call_is_publicly_importable():
-    from extraction import default_llm_call
+    from agent_eval.extraction import default_llm_call
 
     assert callable(default_llm_call)
 

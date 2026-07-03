@@ -77,28 +77,28 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 
 | Layer | Module | Role |
 |---|---|---|
-| Deterministic checks | `src/domain_check.py` | URL hostname vs a per-company allowlist |
-| | `src/quote_match.py` | Fuzzy quote matching with an exact numeric token gate and an ambiguity-gap rule |
-| | `src/url_compare.py` | Same-page URL comparison — cosmetic differences tolerated, path exact |
-| | `src/page_fetch.py` | URL → plain text (HTML and clean PDFs), size caps, honest named failures |
-| | `src/tpi_extract.py` | Deterministic TPI Management Quality parser (raw HTML, no LLM) |
-| Schema & presentation | `src/tag_schema.py` | `ClaimTag` and typed evidence dataclasses; computed `overall_status` |
-| | `src/serialisation.py` | Round-trip `ClaimTag`/result ↔ plain JSON |
-| | `src/review.py` | Terminal formatter for `ClaimTag` and pipeline result output |
-| LLM-calling modules | `src/extraction.py` | Bucket A loop: LLM selects URL + quote from real search results, with retry-with-feedback |
-| | `src/criterion_evidence.py` | Bucket B: per-criterion NZIF excerpt finding; holds the hand-transcribed `NZIF_CRITERIA` and `NZIF_CRITERION_TIERS` |
-| | `src/bucket_triage.py` | Bucket A vs C classification from claim text alone; "ambiguous" is never retried |
-| | `src/source_extraction.py` | Bucket C: per-source value/definition extraction, each independently verified |
-| | `src/reconciliation.py` | Bucket C: grouping sources by shared definition (one whole-list call) |
-| | `src/bucket_d_analysis.py` | Bucket D: structured partial reading of assumptions and causal steps — no verdict |
-| Orchestration | `src/pipeline.py` | Bucket A single-claim wiring (deterministic; no LLM call) |
-| | `src/bucket_b_pipeline.py` | Bucket B orchestrator: six criteria, independent chains, in-call fetch cache |
-| | `src/bucket_c_pipeline.py` | Bucket C orchestrator: triage → source gathering → reconciliation |
-| | `src/bucket_d_pipeline.py` | Bucket D orchestrator |
-| | `src/run_pipeline.py` | Top-level dispatcher |
-| External services | `src/web_search.py` | Tavily search wrapper — generic, knows nothing about claims |
-| Support & data | `src/log_utils.py` | Shared JSONL append helper for the evaluation log |
-| | `src/ground_truth.py` | Primary-source verified claims and metadata for 9 companies (used by live tests, not imported by pipeline modules) |
+| Deterministic checks | `agent_eval/domain_check.py` | URL hostname vs a per-company allowlist |
+| | `agent_eval/quote_match.py` | Fuzzy quote matching with an exact numeric token gate and an ambiguity-gap rule |
+| | `agent_eval/url_compare.py` | Same-page URL comparison — cosmetic differences tolerated, path exact |
+| | `agent_eval/page_fetch.py` | URL → plain text (HTML and clean PDFs), size caps, honest named failures |
+| | `agent_eval/tpi_extract.py` | Deterministic TPI Management Quality parser (raw HTML, no LLM) |
+| Schema & presentation | `agent_eval/tag_schema.py` | `ClaimTag` and typed evidence dataclasses; computed `overall_status` |
+| | `agent_eval/serialisation.py` | Round-trip `ClaimTag`/result ↔ plain JSON |
+| | `agent_eval/review.py` | Terminal formatter for `ClaimTag` and pipeline result output |
+| LLM-calling modules | `agent_eval/extraction.py` | Bucket A loop: LLM selects URL + quote from real search results, with retry-with-feedback |
+| | `agent_eval/criterion_evidence.py` | Bucket B: per-criterion NZIF excerpt finding; holds the hand-transcribed `NZIF_CRITERIA` and `NZIF_CRITERION_TIERS` |
+| | `agent_eval/bucket_triage.py` | Bucket A vs C classification from claim text alone; "ambiguous" is never retried |
+| | `agent_eval/source_extraction.py` | Bucket C: per-source value/definition extraction, each independently verified |
+| | `agent_eval/reconciliation.py` | Bucket C: grouping sources by shared definition (one whole-list call) |
+| | `agent_eval/bucket_d_analysis.py` | Bucket D: structured partial reading of assumptions and causal steps — no verdict |
+| Orchestration | `agent_eval/pipeline.py` | Bucket A single-claim wiring (deterministic; no LLM call) |
+| | `agent_eval/bucket_b_pipeline.py` | Bucket B orchestrator: six criteria, independent chains, in-call fetch cache |
+| | `agent_eval/bucket_c_pipeline.py` | Bucket C orchestrator: triage → source gathering → reconciliation |
+| | `agent_eval/bucket_d_pipeline.py` | Bucket D orchestrator |
+| | `agent_eval/run_pipeline.py` | Top-level dispatcher |
+| External services | `agent_eval/web_search.py` | Tavily search wrapper — generic, knows nothing about claims |
+| Support & data | `agent_eval/log_utils.py` | Shared JSONL append helper for the evaluation log |
+| | `agent_eval/ground_truth.py` | Primary-source verified claims and metadata for 9 companies (used by live tests, not imported by pipeline modules) |
 | Results layer | `scripts/run_batch.py` | Batch runner producing `data/results.json` |
 | | `index.html` | Single-file, no-build results browser reading `data/results.json` |
 

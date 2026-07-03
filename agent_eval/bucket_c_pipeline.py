@@ -40,10 +40,10 @@ would paper over failures that are already honestly reported by the
 functions themselves.
 """
 
-from bucket_triage import triage_claim
-from reconciliation import reconcile_sources
-from source_extraction import gather_source_findings
-from tag_schema import ClaimTag
+from agent_eval.bucket_triage import triage_claim
+from agent_eval.reconciliation import reconcile_sources
+from agent_eval.source_extraction import gather_source_findings
+from agent_eval.tag_schema import ClaimTag
 
 
 def run_bucket_c_pipeline(

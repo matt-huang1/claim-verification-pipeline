@@ -12,8 +12,8 @@ import os
 
 import pytest
 
-from log_utils import LOG_FILENAME
-from reconciliation import (
+from agent_eval.log_utils import LOG_FILENAME
+from agent_eval.reconciliation import (
     _DUPLICATE_URL_FEEDBACK,
     _HALLUCINATED_URL_FEEDBACK,
     _MALFORMED_JSON_FEEDBACK,
@@ -23,7 +23,7 @@ from reconciliation import (
     _SOLE_SOURCE_REASONING,
     reconcile_sources,
 )
-from tag_schema import (
+from agent_eval.tag_schema import (
     DefinitionGroup,
     DistinctFinding,
     SourceFinding,
@@ -642,7 +642,7 @@ def test_bucket_a_and_bucket_c_entries_coexist_in_shared_log(tmp_path):
     produces entries from both in the same file, each correctly tagged with
     their bucket field.
     """
-    from extraction import extract_claim_evidence
+    from agent_eval.extraction import extract_claim_evidence
 
     extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",

@@ -33,8 +33,8 @@ anything, the same reasoning as bucket_c_pipeline.py (where
 reconcile_sources already covers the full Bucket C outcome).
 """
 
-from bucket_d_analysis import analyze_assumptions
-from tag_schema import ClaimTag
+from agent_eval.bucket_d_analysis import analyze_assumptions
+from agent_eval.tag_schema import ClaimTag
 
 
 def run_bucket_d_pipeline(

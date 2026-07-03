@@ -14,8 +14,8 @@ import os
 
 import pytest
 
-from bucket_c_pipeline import run_bucket_c_pipeline
-from tag_schema import ClaimTag, SourcePluralityEvidence
+from agent_eval.bucket_c_pipeline import run_bucket_c_pipeline
+from agent_eval.tag_schema import ClaimTag, SourcePluralityEvidence
 
 # ---------------------------------------------------------------------------
 # Shared constants

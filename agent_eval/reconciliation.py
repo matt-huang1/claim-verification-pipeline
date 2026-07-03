@@ -59,8 +59,8 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
-from log_utils import append_log_entry
-from tag_schema import (
+from agent_eval.log_utils import append_log_entry
+from agent_eval.tag_schema import (
     DefinitionGroup,
     DistinctFinding,
     SourceFinding,
@@ -204,7 +204,7 @@ def _default_llm_call(
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def _validate_response(

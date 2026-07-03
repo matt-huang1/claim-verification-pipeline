@@ -11,8 +11,8 @@ import os
 
 import pytest
 
-from source_extraction import find_source_finding, gather_source_findings
-from tag_schema import SourceFinding
+from agent_eval.source_extraction import find_source_finding, gather_source_findings
+from agent_eval.tag_schema import SourceFinding
 
 # ---------------------------------------------------------------------------
 # Helpers

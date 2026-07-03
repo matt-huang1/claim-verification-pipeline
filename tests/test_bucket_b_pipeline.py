@@ -18,10 +18,10 @@ import os
 
 import pytest
 
-from bucket_b_pipeline import run_bucket_b_pipeline
-from criterion_evidence import NZIF_CRITERIA
-from log_utils import LOG_FILENAME
-from quote_match import MINIMUM_QUOTE_LENGTH_CHARS
+from agent_eval.bucket_b_pipeline import run_bucket_b_pipeline
+from agent_eval.criterion_evidence import NZIF_CRITERIA
+from agent_eval.log_utils import LOG_FILENAME
+from agent_eval.quote_match import MINIMUM_QUOTE_LENGTH_CHARS
 
 TSMC_ALLOWLIST = ["tsmc.com", "pr.tsmc.com"]
 
@@ -613,7 +613,7 @@ def test_bucket_a_and_bucket_b_entries_coexist_in_shared_log(tmp_path):
     produces entries from both in the same file, each correctly tagged with
     their bucket field.
     """
-    from extraction import extract_claim_evidence
+    from agent_eval.extraction import extract_claim_evidence
 
     extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",

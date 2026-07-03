@@ -20,7 +20,7 @@ import os
 
 from unittest.mock import MagicMock, patch
 
-from web_search import search_for_source
+from agent_eval.web_search import search_for_source
 
 _TAVILY_RESULTS = [
     {
@@ -52,7 +52,9 @@ def _mock_client(results: list[dict]) -> MagicMock:
 
 
 def test_successful_response_returns_shaped_results():
-    with patch("web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)):
+    with patch(
+        "agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)
+    ):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC renewable energy 2040")
     assert len(results) == 3
@@ -64,7 +66,7 @@ def test_successful_response_returns_shaped_results():
 def test_snippet_maps_from_content_field():
     """Tavily returns 'content' for the snippet; it must be mapped to 'snippet'."""
     single = [{"url": "https://tsmc.com", "title": "TSMC", "content": "desc text"}]
-    with patch("web_search.TavilyClient", return_value=_mock_client(single)):
+    with patch("agent_eval.web_search.TavilyClient", return_value=_mock_client(single)):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC")
     assert results[0]["snippet"] == "desc text"
@@ -72,7 +74,9 @@ def test_snippet_maps_from_content_field():
 
 def test_max_results_cap_is_enforced():
     """If the API returns more results than max_results, only that many are kept."""
-    with patch("web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)):
+    with patch(
+        "agent_eval.web_search.TavilyClient", return_value=_mock_client(_TAVILY_RESULTS)
+    ):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC", max_results=2)
     assert len(results) == 2
@@ -84,7 +88,7 @@ def test_max_results_cap_is_enforced():
 def test_network_exception_returns_empty_list():
     mock_client = MagicMock()
     mock_client.search.side_effect = Exception("connection failed")
-    with patch("web_search.TavilyClient", return_value=mock_client):
+    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC")
     assert results == []
@@ -94,7 +98,7 @@ def test_missing_api_key_returns_empty_list_without_calling_api():
     """No client should be constructed when TAVILY_API_KEY is absent."""
     env = {k: v for k, v in os.environ.items() if k != "TAVILY_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
-        with patch("web_search.TavilyClient") as mock_cls:
+        with patch("agent_eval.web_search.TavilyClient") as mock_cls:
             results = search_for_source("TSMC")
     assert results == []
     mock_cls.assert_not_called()
@@ -104,7 +108,7 @@ def test_missing_results_key_returns_empty_list():
     """An unexpected response schema (no 'results' key) must not raise."""
     mock_client = MagicMock()
     mock_client.search.return_value = {"query": "TSMC"}  # no 'results' key
-    with patch("web_search.TavilyClient", return_value=mock_client):
+    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC")
     assert results == []
@@ -114,7 +118,7 @@ def test_malformed_response_returns_empty_list():
     """A non-dict response (e.g. API client raises) must return empty, not raise."""
     mock_client = MagicMock()
     mock_client.search.side_effect = ValueError("unexpected response format")
-    with patch("web_search.TavilyClient", return_value=mock_client):
+    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC")
     assert results == []
@@ -132,7 +136,7 @@ def test_search_depth_and_raw_content_are_explicitly_set():
     documented in web_search.py's module docstring.
     """
     mock_client = _mock_client(_TAVILY_RESULTS)
-    with patch("web_search.TavilyClient", return_value=mock_client):
+    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             search_for_source("TSMC renewable energy 2040", max_results=3)
 

@@ -43,13 +43,13 @@ WHY THE RETURN SHAPE IS ALWAYS A DICT WITH THE SAME FOUR FIELDS:
     which pipeline produced the result.
 """
 
-from bucket_b_pipeline import run_bucket_b_pipeline
-from bucket_c_pipeline import run_bucket_c_pipeline
-from bucket_d_pipeline import run_bucket_d_pipeline
-from bucket_triage import triage_claim
-from extraction import default_llm_call as _extraction_default_llm_call
-from extraction import extract_claim_evidence
-from pipeline import verify_bucket_a_claim
+from agent_eval.bucket_b_pipeline import run_bucket_b_pipeline
+from agent_eval.bucket_c_pipeline import run_bucket_c_pipeline
+from agent_eval.bucket_d_pipeline import run_bucket_d_pipeline
+from agent_eval.bucket_triage import triage_claim
+from agent_eval.extraction import default_llm_call as _extraction_default_llm_call
+from agent_eval.extraction import extract_claim_evidence
+from agent_eval.pipeline import verify_bucket_a_claim
 
 _VALID_BUCKETS = {"A", "B", "C", "D"}
 
@@ -244,7 +244,7 @@ def _run_bucket_a(
     attempt are available to pass to verify_bucket_a_claim. See module
     docstring for rationale.
     """
-    from page_fetch import fetch_page_text
+    from agent_eval.page_fetch import fetch_page_text
 
     _captured: dict = {"url": "", "quote": "", "document": ""}
 

@@ -11,14 +11,14 @@ import os
 
 import pytest
 
-from bucket_d_analysis import (
+from agent_eval.bucket_d_analysis import (
     _INVALID_ITEM_FEEDBACK,
     _MALFORMED_JSON_FEEDBACK,
     _MISSING_FIELDS_FEEDBACK,
     analyze_assumptions,
 )
-from log_utils import LOG_FILENAME
-from tag_schema import AssumptionsStatedEvidence
+from agent_eval.log_utils import LOG_FILENAME
+from agent_eval.tag_schema import AssumptionsStatedEvidence
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -410,7 +410,7 @@ def test_bucket_a_and_bucket_d_entries_coexist_in_shared_log(tmp_path):
     One Bucket A call and one Bucket D call with the same log_dir produce
     2 entries in the same file, each correctly tagged with their bucket field.
     """
-    from extraction import extract_claim_evidence
+    from agent_eval.extraction import extract_claim_evidence
 
     extract_claim_evidence(
         "TSMC accelerated its 100% renewable target to 2040",

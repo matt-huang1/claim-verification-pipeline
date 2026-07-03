@@ -23,7 +23,7 @@ reconstructs each pair as a tuple(str, int).
 """
 
 try:
-    from src.tag_schema import (
+    from agent_eval.tag_schema import (
         AssumptionItem,
         AssumptionsStatedEvidence,
         CausalStep,
@@ -38,7 +38,7 @@ try:
         UnresolvedFinding,
     )
 except ModuleNotFoundError:
-    from tag_schema import (  # type: ignore[no-redef]
+    from agent_eval.tag_schema import (  # type: ignore[no-redef]
         AssumptionItem,
         AssumptionsStatedEvidence,
         CausalStep,

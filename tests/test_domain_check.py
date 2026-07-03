@@ -7,7 +7,7 @@ substring containment. If someone "simplifies" the implementation later,
 these tests should fail loudly.
 """
 
-from domain_check import check_domain
+from agent_eval.domain_check import check_domain
 
 
 def test_exact_domain_match():

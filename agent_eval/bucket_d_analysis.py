@@ -54,8 +54,8 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
-from log_utils import append_log_entry
-from tag_schema import AssumptionItem, AssumptionsStatedEvidence, CausalStep
+from agent_eval.log_utils import append_log_entry
+from agent_eval.tag_schema import AssumptionItem, AssumptionsStatedEvidence, CausalStep
 
 load_dotenv()
 
@@ -170,7 +170,7 @@ def _default_llm_call(claim_text: str, feedback: str | None) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.choices[0].message.content or "")
 
 
 def _validate_response(raw: dict) -> tuple[bool, str | None]:

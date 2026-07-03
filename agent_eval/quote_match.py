@@ -196,7 +196,7 @@ def _find_top_candidates(
 
     for _ in range(max_candidates):
         alignment = fuzz.partial_ratio_alignment(quote, working_doc)
-        if alignment.score <= 0:
+        if alignment is None or alignment.score <= 0:
             break
 
         padded_start = max(0, alignment.dest_start - PAD_CHARS)

@@ -465,7 +465,7 @@ def build_tpi_evidence(company_slug: str) -> dict:
     result a caller can act on, e.g. to record that Patagonia is outside
     TPI's assessment universe by design).
     """
-    from tag_schema import TPIManagementQualityEvidence
+    from agent_eval.tag_schema import TPIManagementQualityEvidence
 
     raw = extract_tpi_management_quality(company_slug)
 
@@ -499,7 +499,7 @@ def build_tpi_claim_tag(claim_id: str, company_slug: str, evidence):
     Returns:
         ClaimTag with bucket="B" and tpi_evidence set.
     """
-    from tag_schema import ClaimTag
+    from agent_eval.tag_schema import ClaimTag
 
     return ClaimTag(
         claim_id=claim_id,

@@ -6,15 +6,15 @@ What is built, tested, and live-verified today. For how the pieces fit together,
 
 All four verification types are implemented, tested, and live-verified end to end:
 
-- `src/pipeline.py` + `src/extraction.py` — Bucket A orchestration: domain check, web search, URL enforcement, page fetch, quote match with numeric token gate
-- `src/bucket_b_pipeline.py` + `src/criterion_evidence.py` — Bucket B: NZIF criteria evidence gathering (all six criteria, independently verified) and TPI Management Quality extraction (all 23 indicators, direct HTML parse)
-- `src/bucket_triage.py` + `src/source_extraction.py` + `src/reconciliation.py` + `src/bucket_c_pipeline.py` — Bucket C: triage, multi-source extraction, definition reconciliation
-- `src/bucket_d_analysis.py` + `src/bucket_d_pipeline.py` — Bucket D: assumption and causal chain extraction
-- `src/run_pipeline.py` — top-level dispatcher: routes any claim through triage to the right pipeline, consistent four-field return shape
-- `src/serialisation.py` — round-trip serialisation of all evidence types to JSON
-- `src/review.py` — terminal formatter for ClaimTag and pipeline result output
-- `src/ground_truth.py` — primary-source verified claims and metadata for 9 companies
-- `src/tpi_extract.py` — deterministic TPI Management Quality parser (raw HTML, no LLM)
+- `agent_eval/pipeline.py` + `agent_eval/extraction.py` — Bucket A orchestration: domain check, web search, URL enforcement, page fetch, quote match with numeric token gate
+- `agent_eval/bucket_b_pipeline.py` + `agent_eval/criterion_evidence.py` — Bucket B: NZIF criteria evidence gathering (all six criteria, independently verified) and TPI Management Quality extraction (all 23 indicators, direct HTML parse)
+- `agent_eval/bucket_triage.py` + `agent_eval/source_extraction.py` + `agent_eval/reconciliation.py` + `agent_eval/bucket_c_pipeline.py` — Bucket C: triage, multi-source extraction, definition reconciliation
+- `agent_eval/bucket_d_analysis.py` + `agent_eval/bucket_d_pipeline.py` — Bucket D: assumption and causal chain extraction
+- `agent_eval/run_pipeline.py` — top-level dispatcher: routes any claim through triage to the right pipeline, consistent four-field return shape
+- `agent_eval/serialisation.py` — round-trip serialisation of all evidence types to JSON
+- `agent_eval/review.py` — terminal formatter for ClaimTag and pipeline result output
+- `agent_eval/ground_truth.py` — primary-source verified claims and metadata for 9 companies
+- `agent_eval/tpi_extract.py` — deterministic TPI Management Quality parser (raw HTML, no LLM)
 - `scripts/run_batch.py` — batch runner producing `data/results.json`
 - `index.html` — pre-computed results browser (serve from repo root)
 
