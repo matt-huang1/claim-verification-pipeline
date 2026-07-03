@@ -54,11 +54,9 @@ WHY THE WHOLE RESPONSE IS INVALIDATED ON ANY DEFECT:
 """
 
 import json
-import os
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
-
+from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
 from agent_eval.tag_schema import (
     DefinitionGroup,
@@ -67,10 +65,6 @@ from agent_eval.tag_schema import (
     SourcePluralityEvidence,
     UnresolvedFinding,
 )
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 # Hard cap on LLM attempts for one reconciliation call. The second attempt
 # includes specific feedback about the first attempt's defect; a third would
@@ -181,10 +175,6 @@ def _default_llm_call(
     feedback: str | None,
 ) -> dict:
     """Real LLM call. Tests inject a fake via llm_fn."""
-    from openai import OpenAI
-
-    client = OpenAI()
-
     sources_text = "\n\n".join(
         f"Source URL: {f['source_url']}\n"
         f"Claimed value: {f['claimed_value'] or 'not stated'}\n"
@@ -196,15 +186,7 @@ def _default_llm_call(
     if feedback:
         user += f"\n\nThe previous response was invalid because {feedback}. Please try again."
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return json.loads(response.choices[0].message.content or "")
+    return json.loads(default_complete_json(_SYSTEM_PROMPT, user))
 
 
 def _validate_response(

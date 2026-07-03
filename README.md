@@ -25,7 +25,7 @@ The system never decides whether a claim is "good enough." That judgment belongs
 
 ## Status
 
-All four verification types are implemented, tested, and live-verified end to end — 316 passing deterministic tests plus per-module live API tests. See [CURRENT_STATUS.md](CURRENT_STATUS.md) for the full module inventory and live-verified milestones.
+All four verification types are implemented, tested, and live-verified end to end — 320 passing deterministic tests plus per-module live API tests. See [CURRENT_STATUS.md](CURRENT_STATUS.md) for the full module inventory and live-verified milestones.
 
 ## Does the verifier actually work?
 

@@ -68,20 +68,14 @@ explicitly rather than silently inheriting the same pattern.
 """
 
 import json
-import os
-
-from dotenv import load_dotenv
 
 from agent_eval.domain_check import check_domain
+from agent_eval.llm_client import default_complete_json
 from agent_eval.page_fetch import fetch_page_text
 from agent_eval.quote_match import match_quote
 from agent_eval.tag_schema import SourceFinding
 from agent_eval.url_compare import same_url
 from agent_eval.web_search import search_for_source
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 # Total attempt cap = target_source_count * this multiplier. Stops the loop
 # when a claim genuinely has few findable sources, without bounding target_count
@@ -138,21 +132,11 @@ Respond with ONLY a JSON object with exactly these five fields: \
 
 def _default_finding_llm_call(document: str, claim_text: str) -> dict:
     """Real LLM call for find_source_finding. Tests inject a fake via llm_fn."""
-    from openai import OpenAI
-
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": _FINDING_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"Claim: {claim_text}\n\nDocument:\n{document}",
-            },
-        ],
-        response_format={"type": "json_object"},
+    return json.loads(
+        default_complete_json(
+            _FINDING_SYSTEM_PROMPT, f"Claim: {claim_text}\n\nDocument:\n{document}"
+        )
     )
-    return json.loads(response.choices[0].message.content or "")
 
 
 def find_source_finding(
@@ -261,30 +245,18 @@ def _default_url_selection_llm_call(
     search_results: list[dict],
 ) -> dict:
     """Select the best candidate URL from search results. Tests inject a fake."""
-    from openai import OpenAI
-
-    client = OpenAI()
-
     candidates_text = "\n".join(
         f"{i + 1}. URL: {r['url']}\n   Title: {r['title']}\n   Snippet: {r['snippet']}"
         for i, r in enumerate(search_results)
     )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": _URL_SELECTION_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Claim: {claim_text}\n\n"
-                    f"Candidate sources from web search:\n{candidates_text}"
-                ),
-            },
-        ],
-        response_format={"type": "json_object"},
+    data = json.loads(
+        default_complete_json(
+            _URL_SELECTION_SYSTEM_PROMPT,
+            f"Claim: {claim_text}\n\n"
+            f"Candidate sources from web search:\n{candidates_text}",
+        )
     )
-    data = json.loads(response.choices[0].message.content or "")
     return {"url": data["url"]}
 
 

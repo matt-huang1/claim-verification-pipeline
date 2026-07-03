@@ -79,21 +79,15 @@ what they actually are here:
 """
 
 import json
-import os
 from dataclasses import dataclass
-
-from dotenv import load_dotenv
 
 from agent_eval.extraction import (
     NO_PROGRESS_SCORE_DELTA,
     _build_feedback,
     no_meaningful_progress,
 )
+from agent_eval.llm_client import default_complete_json
 from agent_eval.quote_match import match_quote
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 # NZIF 2.0 alignment criteria, transcribed verbatim from the primary source PDF:
 # IIGCC, Net Zero Investment Framework 2.0, "Criteria underpinning alignment
@@ -232,10 +226,6 @@ def _default_llm_call(document: str, criterion_text: str, feedback: str | None) 
     asks it to find a verbatim supporting excerpt, or explicitly say none
     exists. Tests inject a fake via the `llm_fn` parameter.
     """
-    from openai import OpenAI
-
-    client = OpenAI()
-
     system = (
         "You help verify whether a company document satisfies a specific "
         "climate framework criterion. Given the document text and the "
@@ -254,15 +244,7 @@ def _default_llm_call(document: str, criterion_text: str, feedback: str | None) 
             "Try again, reading the document more carefully."
         )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return json.loads(response.choices[0].message.content or "")
+    return json.loads(default_complete_json(system, user))
 
 
 def find_criterion_evidence(

@@ -49,17 +49,11 @@ the type system says will never exist.
 """
 
 import json
-import os
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
-
+from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
 from agent_eval.tag_schema import AssumptionItem, AssumptionsStatedEvidence, CausalStep
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 # Hard cap on LLM attempts for one analyze_assumptions call. A second
 # attempt includes specific feedback about the first's defect; a third
@@ -151,10 +145,6 @@ Respond with ONLY a JSON object with exactly two fields:
 
 def _default_llm_call(claim_text: str, feedback: str | None) -> dict:
     """Real LLM call. Tests inject a fake via llm_fn."""
-    from openai import OpenAI
-
-    client = OpenAI()
-
     user = f"Claim: {claim_text}"
     if feedback:
         user += (
@@ -162,15 +152,7 @@ def _default_llm_call(claim_text: str, feedback: str | None) -> dict:
             "Please try again."
         )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return json.loads(response.choices[0].message.content or "")
+    return json.loads(default_complete_json(_SYSTEM_PROMPT, user))
 
 
 def _validate_response(raw: dict) -> tuple[bool, str | None]:

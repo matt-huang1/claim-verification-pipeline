@@ -1,10 +1,11 @@
 """
 extraction.py
 
-The Bucket A extraction layer, and the ONLY module that calls a real LLM.
-Everything downstream — domain_check, quote_match, tag_schema, pipeline —
-is deterministic and testable with no API key; this module is the single,
-deliberately thin boundary where non-determinism enters.
+The Bucket A extraction layer: the single point in the Bucket A chain where a
+real model is reached (through the shared llm_client). Everything downstream —
+domain_check, quote_match, tag_schema, pipeline — is deterministic and testable
+with no API key; this module is the deliberately thin boundary where
+non-determinism enters.
 
 The flow: run a Tavily web search on the claim, hand the model the real
 candidate URLs and snippets, let it propose one URL plus a supporting
@@ -42,26 +43,17 @@ adr/0006-extraction.md.
 """
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
-from dotenv import load_dotenv
-
+from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
 from agent_eval.page_fetch import fetch_page_text
 from agent_eval.pipeline import verify_bucket_a_claim
 from agent_eval.url_compare import same_url
 from agent_eval.web_search import search_for_source
-
-load_dotenv()
-
-# Default model: the cheapest capable nano tier (simple extraction, not a
-# reasoning task). Overridable via OPENAI_MODEL so the exact current-cheapest
-# model can be swapped in without a code change as OpenAI's lineup shifts.
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 # Hard ceiling on LLM calls per claim, regardless of anything else.
 MAX_ATTEMPTS = 3
@@ -250,13 +242,9 @@ def _default_llm_call(
     """
     The real LLM call. Presents real search candidates to the model and asks
     it to select the best matching URL and propose a verbatim supporting quote.
-    This is the only function here that touches the OpenAI API; tests inject
-    a fake in its place via the `llm_fn` parameter.
+    This is the only function here that reaches a real model (via the shared
+    llm_client); tests inject a fake in its place via the `llm_fn` parameter.
     """
-    from openai import OpenAI
-
-    client = OpenAI()
-
     candidates_text = "\n".join(
         f"{i + 1}. URL: {r['url']}\n   Title: {r['title']}\n   Snippet: {r['snippet']}"
         for i, r in enumerate(search_results)
@@ -281,15 +269,7 @@ def _default_llm_call(
             "Select a different source or propose a more precise quote."
         )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-    )
-    data = json.loads(response.choices[0].message.content or "")
+    data = json.loads(default_complete_json(system, user))
     return {"url": data["url"], "quote": data["quote"]}
 
 

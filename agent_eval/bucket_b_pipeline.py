@@ -63,23 +63,17 @@ tag_schema already defines.
 """
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
-
 from agent_eval.criterion_evidence import NZIF_CRITERIA, find_criterion_evidence
 from agent_eval.domain_check import check_domain
+from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
 from agent_eval.page_fetch import fetch_page_text
 from agent_eval.tag_schema import ClaimTag, CriterionEvidence
 from agent_eval.url_compare import same_url
 from agent_eval.web_search import search_for_source
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 _ALL_CRITERIA = list(NZIF_CRITERIA.keys())
 
@@ -136,10 +130,6 @@ def _default_url_selection_llm_call(
     Select the best candidate URL from search results for a given criterion.
     Returns {"url": str}. Tests inject a fake via the url_llm_fn parameter.
     """
-    from openai import OpenAI
-
-    client = OpenAI()
-
     candidates_text = "\n".join(
         f"{i + 1}. URL: {r['url']}\n   Title: {r['title']}\n   Snippet: {r['snippet']}"
         for i, r in enumerate(search_results)
@@ -160,15 +150,7 @@ def _default_url_selection_llm_call(
         f"Candidate sources from web search:\n{candidates_text}"
     )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-    )
-    data = json.loads(response.choices[0].message.content or "")
+    data = json.loads(default_complete_json(system, user))
     return {"url": data["url"]}
 
 

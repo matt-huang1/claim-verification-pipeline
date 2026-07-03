@@ -45,13 +45,8 @@ not confidently route it, not a failure to fix by trying again.
 """
 
 import json
-import os
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+from agent_eval.llm_client import default_complete_json
 
 _VALID_CLASSIFICATIONS = {"bucket_a", "bucket_c", "bucket_d", "ambiguous"}
 
@@ -126,18 +121,7 @@ JSON object with exactly two fields:
 
 def _default_llm_call(claim_text: str) -> dict:
     """The real LLM call. Tests inject a fake via the `llm_fn` parameter."""
-    from openai import OpenAI
-
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"Claim: {claim_text}"},
-        ],
-        response_format={"type": "json_object"},
-    )
-    return json.loads(response.choices[0].message.content or "")
+    return json.loads(default_complete_json(_SYSTEM_PROMPT, f"Claim: {claim_text}"))
 
 
 def triage_claim(claim_text: str, llm_fn=None) -> dict:
