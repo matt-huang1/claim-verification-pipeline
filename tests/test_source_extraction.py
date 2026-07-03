@@ -369,15 +369,29 @@ def _make_fetch_fn(result=_FAKE_FETCH_RESULT):
 
 def test_gather_returns_target_count_when_every_iteration_succeeds():
     """
-    With target_source_count=3 and every iteration producing a valid finding,
-    exactly 3 findings are returned.
+    With target_source_count=3 and every iteration producing a valid finding
+    from a distinct URL, exactly 3 findings are returned.
+
+    Uses rotating distinct URLs so deduplication at return does not collapse
+    them — each iteration contributes one independent source.
     """
+    urls = [f"https://example.com/report-{i}" for i in range(3)]
+    url_counter = {"n": 0}
+
+    def multi_url_search(query):
+        return [{"url": u, "title": "Report", "snippet": "..."} for u in urls]
+
+    def rotating_url_llm(claim_text, search_results):
+        url = urls[url_counter["n"] % len(urls)]
+        url_counter["n"] += 1
+        return {"url": url}
+
     results = gather_source_findings(
         claim_text="TSMC has roughly 60% of the foundry market",
         allowlist=["tsmc.com"],
         target_source_count=3,
-        search_fn=_make_search_fn(),
-        url_llm_fn=_make_url_llm_fn(),
+        search_fn=multi_url_search,
+        url_llm_fn=rotating_url_llm,
         fetch_fn=_make_fetch_fn(),
         finding_llm_fn=_both_found_fn,
     )
@@ -390,23 +404,32 @@ def test_failed_iterations_do_not_count_toward_target():
     Some iterations fail (e.g. no search results). Only iterations that
     produce a real SourceFinding count toward the target.
 
-    Setup: first 2 calls return empty results (failures), then 2 return real
-    results. With target=2 and hard cap = 2*3=6, we should get exactly 2 findings.
+    Setup: first 2 calls return empty results (failures), then each
+    subsequent call returns a distinct URL. With target=2 and hard cap=6,
+    we should get exactly 2 findings from 2 distinct sources.
     """
+    urls = [
+        "https://example.com/report-1",
+        "https://example.com/report-2",
+    ]
     call_count = {"n": 0}
 
     def alternating_search(query):
         call_count["n"] += 1
         if call_count["n"] <= 2:
             return []
-        return _FAKE_SEARCH_RESULTS
+        idx = (call_count["n"] - 3) % len(urls)
+        return [{"url": urls[idx], "title": "Report", "snippet": "..."}]
+
+    def passthrough_url_llm(claim_text, search_results):
+        return {"url": search_results[0]["url"]}
 
     results = gather_source_findings(
         claim_text="TSMC has roughly 60% of the foundry market",
         allowlist=["tsmc.com"],
         target_source_count=2,
         search_fn=alternating_search,
-        url_llm_fn=_make_url_llm_fn(),
+        url_llm_fn=passthrough_url_llm,
         fetch_fn=_make_fetch_fn(),
         finding_llm_fn=_both_found_fn,
     )
@@ -441,6 +464,11 @@ def test_in_call_url_cache_deduplicates_fetches():
     """
     If two iterations' searches return the same URL, fetch_fn is called only
     once — the second iteration uses the cached document.
+
+    Note: the fetch cache deduplicates HTTP calls (efficiency); the URL
+    deduplication at return (test_gather_deduplicates_findings_by_source_url)
+    ensures only one SourceFinding per URL reaches reconciliation (correctness).
+    These are two complementary but distinct deduplication mechanisms.
     """
     fetch_call_count = {"n": 0}
 
@@ -457,10 +485,39 @@ def test_in_call_url_cache_deduplicates_fetches():
         fetch_fn=counting_fetch,
         finding_llm_fn=_both_found_fn,
     )
-    assert len(results) == 2
+    assert len(results) == 1, (
+        "After URL deduplication, only one finding is returned even though "
+        "two iterations produced findings — both from the same URL."
+    )
     assert fetch_call_count["n"] == 1, (
         "fetch_fn should be called once even across multiple iterations with "
         "the same URL; second iteration must use the in-call cache"
+    )
+
+
+def test_gather_deduplicates_findings_by_source_url():
+    """
+    Two findings from the same URL are not two independent sources.
+    Reconciliation requires distinct source_urls to form a valid group
+    (min 2 members). Returning duplicates causes reconciliation to always
+    fail with _SINGLE_MEMBER_GROUP_FEEDBACK.
+
+    With target_source_count=3 and every iteration always returning the same
+    URL, gather_source_findings must return exactly 1 finding — only one
+    unique URL, so only one finding regardless of target_source_count.
+    """
+    results = gather_source_findings(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        allowlist=["tsmc.com"],
+        target_source_count=3,
+        search_fn=_make_search_fn(),  # always returns same URL
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        finding_llm_fn=_both_found_fn,
+    )
+    assert len(results) == 1, (
+        f"Expected 1 deduplicated finding, got {len(results)}. "
+        "Multiple findings from the same URL must be collapsed to one."
     )
 
 

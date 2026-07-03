@@ -432,9 +432,12 @@ def test_all_fakes_are_called():
         call_counts["search"] += 1
         return _FAKE_SEARCH_RESULTS
 
+    url_call_count = {"n": 0}
+
     def url_llm_fn(claim_text, search_results):
         call_counts["url_llm"] += 1
-        return {"url": _FAKE_URL_1}
+        url_call_count["n"] += 1
+        return {"url": _FAKE_URL_1 if url_call_count["n"] % 2 == 1 else _FAKE_URL_2}
 
     def fetch_fn(url):
         call_counts["fetch"] += 1

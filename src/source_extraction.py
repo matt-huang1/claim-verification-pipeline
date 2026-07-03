@@ -313,6 +313,10 @@ def gather_source_findings(
     calls. See bucket_b_pipeline.py's module docstring for the full reasoning
     (stale content, company isolation).
 
+    Findings are deduplicated by source_url before returning — two findings
+    from the same URL are not two independent sources for reconciliation
+    purposes.
+
     ALLOWLIST NOTE: for Bucket C, allowlist is used only to determine
     source_type ("official" vs "third_party") on each SourceFinding, not to
     gate or reject results. Expecting most/all findings to be "third_party"
@@ -385,4 +389,10 @@ def gather_source_findings(
         if finding is not None:
             findings.append(finding)
 
-    return findings
+    seen_urls: set[str] = set()
+    deduplicated: list[SourceFinding] = []
+    for f in findings:
+        if f.source_url not in seen_urls:
+            seen_urls.add(f.source_url)
+            deduplicated.append(f)
+    return deduplicated
