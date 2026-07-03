@@ -1,5 +1,7 @@
 # Agent Evaluation Framework
 
+[![CI](https://github.com/matt-huang1/agent-evaluation-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/matt-huang1/agent-evaluation-framework/actions/workflows/ci.yml)
+
 A verification layer for AI-assisted climate transition research at RBC. Its job is to catch errors before they reach client documents — specifically, cases where a model produces plausible-sounding claims not grounded in primary sources.
 
 **The founding failure:** an earlier AI-assisted assessment of TSMC used a framework classification label that does not exist in the IIGCC NZIF 2.0 source document. It was caught by going back to primary sources, not by asking the model to check itself. This system exists to make that check systematic.
@@ -23,22 +25,33 @@ All four verification types are implemented, tested, and live-verified end to en
 
 ## Running the results browser
 
+![The results browser showing pre-computed verification outcomes](docs/results-browser.png)
+
 ```
 python scripts/run_batch.py      # run pipeline on curated claims, writes data/results.json
 python -m http.server 8080       # serve from repo root
 # open http://localhost:8080
 ```
 
+The browser reads `data/results.json` if present, and otherwise falls back to the
+bundled `data/sample_results.json` (anonymised) so a fresh clone shows a working
+example immediately — this is the state shown above.
+
 ## Development
 
 ```
-pip install -e .
+pip install -e ".[dev]"                     # package + test/lint/type-check tooling
 cp .env.example .env                        # add OPENAI_API_KEY and TAVILY_API_KEY
 python -m pytest -m "not live_api" -q      # full deterministic suite
 RUN_LIVE_API=1 python -m pytest -m live_api -v   # live tests (cost real API calls)
-python -m black --check agent_eval/ tests/        # formatting check
-python -m flake8 agent_eval/ tests/               # lint
+python -m black --check .                          # formatting check
+python -m flake8 .                                 # lint
+python -m mypy                                     # static type check
 ```
+
+The runtime package (`pip install -e .`) pulls in only what the pipeline needs to
+run; pytest, black, flake8, and mypy live in the `dev` extra so they are not forced
+on consumers of the package. CI runs the full suite on Python 3.10–3.12.
 
 ## Documentation
 

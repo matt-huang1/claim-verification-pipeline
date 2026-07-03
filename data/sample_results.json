@@ -170,6 +170,48 @@
   }
  },
  {
+  "company": "Cascade Semiconductor",
+  "label": "Cascade Semiconductor \u2014 advanced-node foundry share (Bucket C)",
+  "bucket": "C",
+  "outcome": "disambiguated",
+  "triage_reasoning": "The claim depends on the contested scope of 'foundry market', which sources bound differently (leading-edge only vs. all nodes). Settling it requires comparing definitions across sources (bucket_c).",
+  "tag": {
+   "claim_id": "cascade-c-advanced-node",
+   "bucket": "C",
+   "claim_text": "Cascade Semiconductor holds roughly 30% of the advanced-node foundry market",
+   "overall_status": "disambiguated",
+   "domain_evidence": null,
+   "quote_evidence": null,
+   "criteria_evidence": null,
+   "tpi_evidence": null,
+   "source_plurality_evidence": {
+    "sources_checked": 3,
+    "groups": [
+     {
+      "member_source_urls": [
+       "https://example.com/analyst/foundry-q4-share",
+       "https://example.com/research/leading-edge-capacity"
+      ],
+      "shared_definition_label": "Advanced-node (7nm and below) logic foundry capacity, excluding trailing-edge and in-house IDM output",
+      "reasoning": "Both sources bound the market to leading-edge (7nm and below) logic foundry revenue and explicitly exclude trailing-edge nodes, so their 28% and 31% figures describe the same real-world scope despite different wording."
+     }
+    ],
+    "distinct_sources": [
+     {
+      "source_url": "https://example.com/news/total-foundry-market",
+      "reasoning": "Defines 'foundry market' as all outsourced wafer fabrication across every node, a broader scope than the leading-edge group; its ~18% figure measures a different thing and is kept distinct rather than averaged in."
+     }
+    ],
+    "unresolved": [],
+    "no_definition_sources": [],
+    "failed_reconciliation": [],
+    "notes": "One group of two sources shares a leading-edge definition; a third source uses an all-node definition and is deliberately not merged."
+   },
+   "assumptions_evidence": null,
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ },
+ {
   "company": "Frontier Lithium Works",
   "label": "Frontier Lithium Works \u2014 transition enabler (Bucket D)",
   "bucket": "D",
