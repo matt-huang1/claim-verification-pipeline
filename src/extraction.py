@@ -37,7 +37,7 @@ An earlier design asked the model to propose a source URL purely from its
 training data. A live run showed this reliably produces plausible-but-
 nonexistent URLs (URLs that look real but return 404 or belong to unrelated
 content). Web search was added as the fix: before each LLM call, the
-pipeline runs a Brave Search query against the claim text and passes the
+pipeline runs a web search (Tavily) against the claim text and passes the
 real, verified-to-exist candidate URLs to the model. The model then selects
 the best candidate from those URLs rather than generating one from memory.
 
@@ -50,7 +50,7 @@ exists will learn that unverified URLs are always available as a backstop.
 The "no_search_results" failure counts toward both the hard cap and the
 no-progress early-stop rule - an empty-search-results loop is just as much
 "no progress" as a repeated identical quote-match failure. See web_search.py
-for the choice of Brave Search over OpenAI's bundled search options.
+for the choice of Tavily over the alternative search providers.
 
 FETCH LAYER - why the document is fetched live, not caller-supplied:
 
@@ -95,8 +95,9 @@ STRUCTURED LOG - so a human can audit failures, not just trust the verdict:
 
 Every attempt (not only the final outcome) is appended to a JSON-lines log
 in logs/. Each log entry includes a stage_reached field indicating how far
-that attempt got ("no_search_results", "url_not_from_search_results",
-"fetch_failed", or "verification_completed"), so a human scanning the log
+that attempt got ("no_search_results", "malformed_llm_response",
+"url_not_from_search_results", "fetch_failed", or
+"verification_completed"), so a human scanning the log
 can immediately see where each attempt stopped. The purpose is to let a
 human review failures later and spot patterns (a certain kind of claim
 failing the same way), and to independently check whether a status was
@@ -170,8 +171,9 @@ class AttemptRecord:
     status: str
     top_score: float | None
     # How far this attempt got through the pipeline before stopping.
-    # Possible values: "no_search_results", "url_not_from_search_results",
-    # "fetch_failed", "verification_completed".
+    # Possible values: "no_search_results", "malformed_llm_response",
+    # "url_not_from_search_results", "fetch_failed",
+    # "verification_completed".
     stage_reached: str
     timestamp: str
     company_name: str = ""
@@ -397,7 +399,7 @@ def extract_claim_evidence(
         -> dict
     returning {"url": str, "quote": str}.
 
-    `search_fn`, if provided, replaces the real Brave Search call. Signature:
+    `search_fn`, if provided, replaces the real Tavily search call. Signature:
         (query: str) -> list[dict]
     returning [{"url": str, "title": str, "snippet": str}, ...].
 

@@ -6,19 +6,17 @@ text, calls analyze_assumptions and wraps the result in a ClaimTag.
 
 WHY THERE IS NO TRIAGE STEP:
 
-Bucket D claims are identified by a human before this pipeline runs. The
-ambiguity between Bucket D and other buckets is usually obvious to a human
-reader (a counterfactual or future-facing claim reads differently from a
-historical market-share figure). bucket_triage.py only classifies between
-bucket_a and bucket_c — adding Bucket D awareness to it would require
-changing a live-verified module for marginal benefit at current project
-scale.
+Routing to Bucket D happens upstream of this module — either the caller
+identifies the claim as Bucket D and supplies bucket="D" to run_pipeline.py,
+or run_pipeline.py's own triage step classifies it as bucket_d and routes
+it here. Re-running triage inside this pipeline would duplicate the
+dispatcher's job and could produce a contradictory routing.
 
 WHY THE RETURN TYPE IS ClaimTag DIRECTLY, NOT A DICT:
 
 No triage means no routing failure paths. bucket_c_pipeline.py returns a
-dict because triage can produce four distinct outcomes, only one of which
-is a real ClaimTag. Here there is one outcome: analyze_assumptions always
+dict because its own triage step can produce several distinct outcomes,
+only one of which is a real ClaimTag. Here there is one outcome: analyze_assumptions always
 returns a well-formed AssumptionsStatedEvidence (never None, never raises),
 so wrapping that in a ClaimTag and returning it directly is the natural,
 unambiguous shape. This matches bucket_b_pipeline.py, which also returns

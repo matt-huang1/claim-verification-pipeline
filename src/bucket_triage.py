@@ -1,16 +1,22 @@
 """
 bucket_triage.py
 
-Bucket C entry point: given a claim's text alone (no document, no search,
-no fetch), decide whether the claim belongs to:
+Claim triage: given a claim's text alone (no document, no search, no
+fetch), decide whether the claim belongs to:
 
   - "bucket_a"   — a single authoritative source exists in principle
                    (the underlying category is precisely bounded)
   - "bucket_c"   — no single authoritative source exists
                    (the underlying category is definitionally contested)
-  - "ambiguous"  — the model cannot confidently classify it either way;
+  - "bucket_d"   — the claim is future-facing or counterfactual, so no
+                   fact-check is possible even in principle
+  - "ambiguous"  — the model cannot confidently classify it;
                    this is a stable, honest finding about the claim itself,
                    not a transient miss, and is never retried
+
+Bucket B is never a triage output — identifying which external framework
+applies to a company is a human decision, supplied as an explicit
+bucket="B" to run_pipeline.py, not something derivable from claim text.
 
 WHY THIS IS NOT A KEYWORD/REGEX CHECK:
 
@@ -136,7 +142,8 @@ def _default_llm_call(claim_text: str) -> dict:
 
 def triage_claim(claim_text: str, llm_fn=None) -> dict:
     """
-    Classify a claim into bucket_a, bucket_c, ambiguous, or malformed_llm_response.
+    Classify a claim into bucket_a, bucket_c, bucket_d, ambiguous, or
+    malformed_llm_response.
 
     `llm_fn`, if provided, replaces the real OpenAI call. Signature:
         (claim_text: str) -> dict

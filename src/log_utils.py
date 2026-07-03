@@ -10,9 +10,9 @@ reader can filter or group by either dimension without bucket-specific parsing.
 
 WHY A SEPARATE MODULE RATHER THAN DUPLICATED HELPERS:
 
-The "append a JSON line, create the dir if needed" logic is identical in both
-callers. Duplicating it would create two implementations that could diverge
-silently (e.g. one caller changes the filename, the other doesn't). A single
+The "append a JSON line, create the dir if needed" logic is identical in every
+caller. Duplicating it would create implementations that could diverge
+silently (e.g. one caller changes the filename, the others don't). A single
 shared helper is the same judgment call made for quote_match.py (used by both
 extraction.py and criterion_evidence.py): if two modules need exactly the same
 deterministic operation, the operation belongs in one place.

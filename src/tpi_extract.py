@@ -233,9 +233,10 @@ class _MQParser(HTMLParser):
             return
         m = self._RESULT_RE.search(cls)
         if m:
-            self.indicators.append(m.group(1))  # "yes" or "no"
+            self.indicators.append(m.group(1))  # "yes" | "no" | "not-applicable"
         else:
-            # class has "mq-answer" but neither "--yes" nor "--no"
+            # class has "mq-answer" but none of "--yes", "--no",
+            # or "--not-applicable" — an unrecognised indicator value
             self.values_ok = False
 
     def handle_data(self, data):

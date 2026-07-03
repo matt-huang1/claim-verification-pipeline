@@ -64,8 +64,8 @@ def run_bucket_c_pipeline(
     Run the full Bucket C pipeline for `claim_text`.
 
     Steps:
-      1. triage_claim — route the claim to bucket_a, bucket_c, ambiguous,
-         or malformed_llm_response.
+      1. triage_claim — route the claim to bucket_a, bucket_c, bucket_d,
+         ambiguous, or malformed_llm_response.
       2. gather_source_findings — search → URL selection → fetch →
          per-source extraction (SourceFinding list).
       3. reconcile_sources — group definition-bearing sources by shared
@@ -75,9 +75,13 @@ def run_bucket_c_pipeline(
     Steps 2-4 run only when triage returns "bucket_c". Any other triage
     result returns immediately without calling gather or reconcile.
 
-    Returns a dict with four possible shapes:
+    Returns a dict with five possible shapes:
 
         {"outcome": "routed_to_bucket_a",
+         "triage_reasoning": str,
+         "tag": None}
+
+        {"outcome": "routed_to_bucket_d",
          "triage_reasoning": str,
          "tag": None}
 

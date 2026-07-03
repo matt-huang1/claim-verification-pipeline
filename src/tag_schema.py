@@ -84,12 +84,12 @@ class QuoteMatchEvidence:
     candidate_count: int
 
 
-# Bucket B, C, and D checks are not yet implemented (see project README -
-# this is a known, deliberate gap, not an oversight). These are declared
-# now, as explicit placeholders, rather than left for later, so that
-# ClaimTag.overall_status (below) has to make a real decision about every
-# bucket type today, instead of silently defaulting to "unknown" behavior
-# for buckets that don't exist yet when someone eventually adds them.
+# Evidence types for Bucket B, C, and D checks. These were originally
+# declared as explicit placeholders before those pipelines existed, so that
+# ClaimTag.overall_status (below) had to make a real decision about every
+# bucket type from the start, instead of silently defaulting to "unknown"
+# behavior. All four bucket pipelines are now implemented and populate
+# these types (see project README, "What's built").
 
 
 @dataclass(frozen=True)

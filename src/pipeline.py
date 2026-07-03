@@ -9,8 +9,8 @@ DELIBERATE SCOPE BOUNDARY - no AI/LLM call lives here. The claim text,
 source URL, and claimed quote are all supplied as direct inputs, not
 extracted by a model. This keeps the whole pipeline deterministic and
 testable with no API key, exactly like domain_check.py and quote_match.py.
-The (future) model-driven extraction step that produces these inputs is a
-separate concern, upstream of this file; mixing it in here would make the
+The model-driven extraction step that produces these inputs (extraction.py)
+is a separate concern, upstream of this file; mixing it in here would make the
 pipeline impossible to test without a live model and would reintroduce
 non-determinism into the one place that is supposed to be the trustworthy,
 checkable core.

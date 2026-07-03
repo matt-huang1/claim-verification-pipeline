@@ -34,7 +34,7 @@ ASSUMPTIONS:
 Both URLs are expected to have an explicit scheme (http:// or https://). A bare
 URL without a scheme (e.g. "tsmc.com/news") will not parse correctly — the
 entire string will be treated as a path with no hostname, and the comparison
-will produce incorrect results. In practice, URLs from the Brave Search API
+will produce incorrect results. In practice, URLs from the Tavily search API
 and from the LLM always include a scheme.
 """
 

@@ -196,8 +196,10 @@ def _validate_response(raw: dict) -> tuple[bool, str | None]:
             return False, _INVALID_ITEM_FEEDBACK
         if not isinstance(item["text"], str) or not item["text"]:
             return False, _INVALID_ITEM_FEEDBACK
-        # isinstance(val, bool) rejects "true", 1, None — int is a subclass
-        # of bool in Python, so check bool first to reject plain integers
+        # isinstance(val, bool) rejects "true", 1, and None. bool is a
+        # subclass of int in Python, so a plain isinstance(val, int) check
+        # would accept 1 and 0 alongside True and False — checking bool
+        # specifically is what rejects plain integers.
         if not isinstance(item["present_in_claim"], bool):
             return False, _INVALID_ITEM_FEEDBACK
 
