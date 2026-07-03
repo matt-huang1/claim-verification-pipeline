@@ -433,3 +433,31 @@ Tested three candidate fixes directly against the live API, not chosen by intuit
 **Why triage is skipped when `bucket` is explicitly supplied:** an explicit bucket is a human-supplied routing decision that overrides the model's judgment. Calling triage anyway would waste cost and could produce a contradictory routing. Skipping triage when the answer is already known also guarantees `triage_llm_fn` is never called in tests that supply `bucket=` explicitly — a testability property, not just efficiency.
 
 **Live-verified result:** two real API calls, both passed — Bucket C on "TSMC has roughly 60% of the foundry market" (full triage + gathering + reconciliation chain, 342 seconds), and Bucket D on the TSMC counterfactual with explicit routing (23 seconds). The 342-second Bucket C run is the expected cost of five real HTTP fetches and multiple OpenAI calls in sequence — not a bug, the cost of genuine verification.
+
+---
+
+## `serialisation.py`, `run_batch.py`, and `index.html` — the results layer
+
+**What this layer does:** converts `ClaimTag` objects and `run_pipeline` result dicts to plain JSON (and back), runs a curated set of claims through the pipeline in batch, and displays the results in a single-file browser.
+
+**Why serialisation needed its own module rather than `json.dumps` directly:** `ClaimTag` contains nested frozen dataclasses with non-JSON-native types — `dict[int, str]` for TPI indicator results (JSON keys must be strings), `list[tuple[str, int]]` for historical levels (JSON has no tuple type), and computed properties (`overall_status`) that don't appear in `__dict__`. A dedicated `tag_to_dict` / `dict_to_tag` round-trip ensures every consumer gets a consistent shape without each one reimplementing the coercion logic. `overall_status` is explicitly included in the serialised form so the UI can display it without reconstructing the full dataclass — it's deterministic, so storing it is safe.
+
+**The pre-computed results approach over live UI calls:** Bucket C runs take 248 seconds; Bucket D takes 23 seconds; a full portfolio would take over an hour. Displaying pre-computed results avoids blank-screen latency entirely, keeps API costs predictable, and means the UI is demonstrable without any backend running. The tradeoff is staleness — results don't update when company disclosures change. Accepted for the current build; revisit when live verification is wired to the UI.
+
+**The URL deduplication fix found during the first real batch run:** `gather_source_findings` already deduplicates HTTP fetches via an in-call cache, but multiple loop iterations could still select the same URL, hit the cache, and produce multiple `SourceFinding` objects with the same `source_url`. When all 5 findings from a single batch run came from `averroes.ai`, reconciliation received 4 identical source URLs, correctly grouped them into one group, but `_validate_response` correctly rejected a 1-member group. The fix: deduplicate findings by `source_url` at return, keeping the first per URL. The existing fetch cache handles the HTTP efficiency; the new deduplication handles the reconciliation input correctness. Two complementary mechanisms with different jobs, confirmed necessary by a real live failure.
+
+**`index.html` design decisions:** single-file, no build step, no framework. Fetches `data/results.json` at load time via `fetch()`. Two-panel layout: sidebar with tab-switching between "New claim" (form, disabled pending live integration) and "Results" (browsable list), main panel showing detail or the search home. The "New claim" tab shows the full form — company, claim, advanced type selector — even though submission is disabled, so the intended workflow is legible to a reviewer seeing the tool for the first time. Advanced options hidden behind a toggle to keep the primary flow clean. The NZIF criteria matrix shows verbatim definitions and a tier-by-criterion grid for listed equity and corporate fixed income, with a footnote that governance applies to other asset classes — accurate to the framework without overstating what the current evidence set covers.
+
+---
+
+## Known open limitations, explicitly named
+
+These are real, current gaps — named here rather than left as implicit TODOs:
+
+**Patagonia bot-detection:** Patagonia's website actively blocks plain HTTP fetches, returning a holding page rather than real content. The system correctly returns `not_found_after_retries` for every NZIF criterion rather than fabricating evidence. The right fix (a browser-capable fetcher, or a disclosed scraping agreement) was explicitly deferred rather than patched reflexively, because the reusable, unattended-scale version of any bypass matters and the right answer depends on RBC's context.
+
+**Bucket C source diversity:** For the TSMC foundry market share claim, Tavily consistently returns results dominated by a single domain (`averroes.ai`). After URL deduplication, this means reconciliation receives only one unique source — not enough to establish a group. The honest result (`definitional_ambiguity_unresolved`) is correct. The underlying issue is Tavily's search result diversity for this specific claim, not a code defect. Addressable by query variation or a different search provider; deferred pending more live data on how common this pattern is across other Bucket C claims.
+
+**`target_source_count` for Bucket C:** Currently fixed at 5 at the orchestrator level. The 248-second live run suggests this may be worth reducing — but one run isn't enough data. Revisit after several runs across different claims, using the structured log to see how many of the 5 actually contributed usable findings.
+
+**Live verification not wired to the UI:** `index.html` shows pre-computed results only. The dispatcher (`run_pipeline.py`) and all four pipelines exist and work; the missing piece is a server layer that calls them on demand and streams progress to the browser.
