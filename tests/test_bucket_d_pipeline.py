@@ -10,8 +10,8 @@ import os
 
 import pytest
 
-from bucket_d_pipeline import run_bucket_d_pipeline
-from tag_schema import AssumptionsStatedEvidence, ClaimTag
+from agent_eval.bucket_d_pipeline import run_bucket_d_pipeline
+from agent_eval.tag_schema import AssumptionsStatedEvidence, ClaimTag
 
 # ---------------------------------------------------------------------------
 # Shared helpers

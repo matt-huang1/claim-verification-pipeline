@@ -72,12 +72,12 @@ import os
 
 from dotenv import load_dotenv
 
-from domain_check import check_domain
-from page_fetch import fetch_page_text
-from quote_match import match_quote
-from tag_schema import SourceFinding
-from url_compare import same_url
-from web_search import search_for_source
+from agent_eval.domain_check import check_domain
+from agent_eval.page_fetch import fetch_page_text
+from agent_eval.quote_match import match_quote
+from agent_eval.tag_schema import SourceFinding
+from agent_eval.url_compare import same_url
+from agent_eval.web_search import search_for_source
 
 load_dotenv()
 

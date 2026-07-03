@@ -11,20 +11,16 @@ data/results.json with the latest results.
 """
 
 import json
-import sys
 import time
 import traceback
 from pathlib import Path
 
-# Ensure src/ is importable when run from repo root or scripts/
+from agent_eval.ground_truth import COMPANY_CLAIMS
+from agent_eval.run_pipeline import run_pipeline
+from agent_eval.serialisation import result_to_dict
+from agent_eval.tpi_extract import fetch_and_tag_tpi_evidence
+
 _ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(_ROOT / "src"))
-
-from ground_truth import COMPANY_CLAIMS  # noqa: E402
-from run_pipeline import run_pipeline  # noqa: E402
-from serialisation import result_to_dict  # noqa: E402
-from tpi_extract import fetch_and_tag_tpi_evidence  # noqa: E402
-
 _OUTPUT = _ROOT / "data" / "results.json"
 
 # ─── curated claim set ────────────────────────────────────────────────────────

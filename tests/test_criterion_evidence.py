@@ -14,7 +14,7 @@ Test organisation:
   - independence of different criteria (failure on one does not affect another)
 """
 
-from criterion_evidence import (
+from agent_eval.criterion_evidence import (
     NZIF_CRITERIA,
     NZIF_CRITERION_TIERS,
     _CRITERION_NOT_FOUND_FEEDBACK,

@@ -84,8 +84,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from extraction import NO_PROGRESS_SCORE_DELTA, _build_feedback, no_meaningful_progress
-from quote_match import match_quote
+from agent_eval.extraction import NO_PROGRESS_SCORE_DELTA, _build_feedback, no_meaningful_progress
+from agent_eval.quote_match import match_quote
 
 load_dotenv()
 

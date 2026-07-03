@@ -5,7 +5,7 @@ except tag_schema and serialisation.
 
 import json
 
-from src.tag_schema import (
+from agent_eval.tag_schema import (
     AssumptionItem,
     AssumptionsStatedEvidence,
     CausalStep,
@@ -18,7 +18,7 @@ from src.tag_schema import (
     SourcePluralityEvidence,
     TPIManagementQualityEvidence,
 )
-from src.serialisation import (
+from agent_eval.serialisation import (
     tag_to_dict,
     dict_to_tag,
     result_to_dict,

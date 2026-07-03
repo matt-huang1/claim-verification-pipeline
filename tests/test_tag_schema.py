@@ -8,7 +8,7 @@ shape (one tag per claim, typed evidence slots, a computed property
 rather than a settable field).
 """
 
-from tag_schema import (
+from agent_eval.tag_schema import (
     AssumptionItem,
     AssumptionsStatedEvidence,
     CausalStep,

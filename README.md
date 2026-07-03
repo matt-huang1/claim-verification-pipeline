@@ -36,8 +36,8 @@ pip install -r requirements.txt
 cp .env.example .env                        # add OPENAI_API_KEY and TAVILY_API_KEY
 python -m pytest -m "not live_api" -q      # full deterministic suite
 RUN_LIVE_API=1 python -m pytest -m live_api -v   # live tests (cost real API calls)
-python -m black --check src/ tests/        # formatting check
-python -m flake8 src/ tests/               # lint
+python -m black --check agent_eval/ tests/        # formatting check
+python -m flake8 agent_eval/ tests/               # lint
 ```
 
 ## Documentation

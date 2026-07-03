@@ -2,7 +2,7 @@
 Unit tests for src/review.py — pure presentation, no API or pipeline calls.
 """
 
-from src.tag_schema import (
+from agent_eval.tag_schema import (
     AssumptionItem,
     AssumptionsStatedEvidence,
     CausalStep,
@@ -16,7 +16,7 @@ from src.tag_schema import (
     TPIManagementQualityEvidence,
     UnresolvedFinding,
 )
-from src.review import format_tag, format_result
+from agent_eval.review import format_tag, format_result
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 

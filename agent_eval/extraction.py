@@ -114,11 +114,11 @@ from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
-from log_utils import append_log_entry
-from page_fetch import fetch_page_text
-from pipeline import verify_bucket_a_claim
-from url_compare import same_url
-from web_search import search_for_source
+from agent_eval.log_utils import append_log_entry
+from agent_eval.page_fetch import fetch_page_text
+from agent_eval.pipeline import verify_bucket_a_claim
+from agent_eval.url_compare import same_url
+from agent_eval.web_search import search_for_source
 
 load_dotenv()
 

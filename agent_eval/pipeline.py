@@ -33,9 +33,9 @@ something other than the standard recipe can drop function 3 and use them
 directly.
 """
 
-from domain_check import check_domain
-from quote_match import match_quote, QuoteMatchResult
-from tag_schema import ClaimTag, DomainCheckEvidence, QuoteMatchEvidence
+from agent_eval.domain_check import check_domain
+from agent_eval.quote_match import match_quote, QuoteMatchResult
+from agent_eval.tag_schema import ClaimTag, DomainCheckEvidence, QuoteMatchEvidence
 
 
 def run_bucket_a_checks(

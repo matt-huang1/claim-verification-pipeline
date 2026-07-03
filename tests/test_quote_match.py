@@ -8,7 +8,7 @@ counterexample, not a generic case, so a future regression on any one
 of these specific failure modes will be caught.
 """
 
-from quote_match import match_quote
+from agent_eval.quote_match import match_quote
 
 
 def test_specific_unique_quote_in_realistic_document():

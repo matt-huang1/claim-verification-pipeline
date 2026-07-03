@@ -2,7 +2,7 @@
 Smoke tests for ground_truth.py — structure validation only, no pipeline calls.
 """
 
-from ground_truth import COMPANY_CLAIMS
+from agent_eval.ground_truth import COMPANY_CLAIMS
 
 _REQUIRED_KEYS = {
     "allowlist",

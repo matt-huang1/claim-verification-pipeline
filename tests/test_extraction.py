@@ -22,7 +22,7 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from extraction import (
+from agent_eval.extraction import (
     AttemptRecord,
     _NO_SEARCH_RESULTS_FEEDBACK,
     _build_fetch_feedback,
@@ -30,7 +30,7 @@ from extraction import (
     is_verifiable_claim,
     no_meaningful_progress,
 )
-from quote_match import MINIMUM_QUOTE_LENGTH_CHARS
+from agent_eval.quote_match import MINIMUM_QUOTE_LENGTH_CHARS
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -466,7 +466,7 @@ def test_loop_rejects_url_not_from_search_results(tmp_path):
         # tsmc.com is on the allowlist, but this path is not in _FAKE_SEARCH_RESULTS
         return {"url": "https://tsmc.com/invented-page", "quote": TSMC_TRUE_QUOTE}
 
-    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+    with patch("agent_eval.extraction.verify_bucket_a_claim") as mock_verify:
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
@@ -529,7 +529,7 @@ def test_loop_stops_early_on_repeated_fetch_failure(tmp_path):
             "failure_reason": "not_found",
         }
 
-    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+    with patch("agent_eval.extraction.verify_bucket_a_claim") as mock_verify:
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
@@ -579,7 +579,7 @@ def test_loop_fetch_fail_then_verification_counts_as_progress(tmp_path):
     mock_tag.overall_status = "ambiguous"
     mock_tag.quote_evidence = None
 
-    with patch("extraction.verify_bucket_a_claim", return_value=mock_tag):
+    with patch("agent_eval.extraction.verify_bucket_a_claim", return_value=mock_tag):
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
@@ -622,7 +622,7 @@ def test_malformed_llm_response_does_not_raise(tmp_path):
     def broken_llm(claim_text, feedback, search_results):
         raise ValueError("invalid JSON returned by model")
 
-    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+    with patch("agent_eval.extraction.verify_bucket_a_claim") as mock_verify:
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,
@@ -647,7 +647,7 @@ def test_malformed_llm_response_missing_url_field_does_not_raise(tmp_path):
     def missing_url_llm(claim_text, feedback, search_results):
         return {"quote": "some quote, but no url field"}
 
-    with patch("extraction.verify_bucket_a_claim") as mock_verify:
+    with patch("agent_eval.extraction.verify_bucket_a_claim") as mock_verify:
         result = extract_claim_evidence(
             "TSMC moved its renewable target to 2040",
             allowlist=TSMC_ALLOWLIST,

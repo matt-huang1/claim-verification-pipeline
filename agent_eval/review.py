@@ -12,7 +12,7 @@ format_tag is for when you already have a ClaimTag directly.
 
 import textwrap
 
-from src.tag_schema import (
+from agent_eval.tag_schema import (
     ClaimTag,
     SourcePluralityEvidence,
     TPIManagementQualityEvidence,

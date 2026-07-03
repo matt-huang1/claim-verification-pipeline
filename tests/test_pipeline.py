@@ -10,9 +10,9 @@ These cover the three-function split deliberately:
   framework exists to catch: a hallucinated number, and a spoofed domain.
 """
 
-from quote_match import match_quote
-from tag_schema import ClaimTag
-from pipeline import build_bucket_a_tag, verify_bucket_a_claim
+from agent_eval.quote_match import match_quote
+from agent_eval.tag_schema import ClaimTag
+from agent_eval.pipeline import build_bucket_a_tag, verify_bucket_a_claim
 
 # The real September 2023 TSMC RE100 press release text, as used across
 # the rest of this project's tests.
