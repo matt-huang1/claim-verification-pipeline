@@ -222,7 +222,7 @@ def _totalenergies_tpi_evidence():
     real-world fixture rather than a fully synthetic one: the actual known
     result (Level 5, failing indicators 21 and 22) is more meaningful than
     arbitrary placeholder values, and was independently cross-checked against
-    an RBC analyst document before being used here.
+    an asset-manager analyst document before being used here.
     """
     indicators = {i: "yes" for i in range(1, 24)}
     indicators[21] = "no"

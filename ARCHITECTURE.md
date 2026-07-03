@@ -99,7 +99,9 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 | External services | `agent_eval/web_search.py` | Tavily search wrapper — generic, knows nothing about claims |
 | Support & data | `agent_eval/log_utils.py` | Shared JSONL append helper for the evaluation log |
 | | `agent_eval/ground_truth.py` | Primary-source verified claims and metadata for 9 companies (used by live tests, not imported by pipeline modules) |
+| | `agent_eval/adversarial_eval.py` | Deterministic self-evaluation: feeds the Bucket A verifier corrupted proposals and asserts each is caught with the correct status |
 | Results layer | `scripts/run_batch.py` | Batch runner producing `data/results.json` |
+| | `scripts/adversarial_eval.py` | CLI runner for the verifier self-evaluation (offline, CI-gated) |
 | | `index.html` | Single-file, no-build results browser reading `data/results.json` |
 
 ## Status vocabulary
@@ -131,5 +133,5 @@ All four buckets write structured entries to one shared file, `logs/evaluation_l
 
 Two deliberately different test classes, because they catch different classes of error and neither substitutes for the other ([the evidence](DESIGN_DECISIONS.md#cross-cutting-lessons)):
 
-- **Deterministic suite** (`python -m pytest -m "not live_api" -q`) — 311 tests, no network, every LLM injected as a fake. Proves the logic is internally consistent with its own assumptions.
+- **Deterministic suite** (`python -m pytest -m "not live_api" -q`) — 316 tests, no network, every LLM injected as a fake. Proves the logic is internally consistent with its own assumptions.
 - **Live tests** (`RUN_LIVE_API=1 python -m pytest -m live_api -v`) — real search, real pages, real models, real cost. Proves the assumptions about the outside world are actually correct. Three of the project's most consequential bugs were findable only this way.

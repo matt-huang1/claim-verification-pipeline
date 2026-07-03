@@ -196,7 +196,7 @@ class TPIManagementQualityEvidence:
     needing verification), so there's no "is this adequate" judgment to
     automate here. The judgment this evidence informs is a human's to make,
     looking at this evidence alongside NZIF criteria evidence, exactly as
-    already done by hand in the real RBC analysis this project supports.
+    already done by hand in the real asset-manager analysis this project supports.
     """
 
     company_tpi_id: str | None  # None if TPI's dropdown was absent from the page

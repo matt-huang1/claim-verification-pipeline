@@ -26,9 +26,9 @@ Each of the 23 Management Quality indicators is rendered as a div with class:
 
 where N is an integer (0–5) representing the TPI level the indicator belongs
 to. The divs appear in document order, matching indicator numbers 1 through 23.
-Cross-checked against an independent RBC analyst document that independently
-stated TotalEnergies fails indicators 21 and 22 only — the HTML parse matched
-exactly.
+Cross-checked against an independent asset-manager analyst document that
+independently stated TotalEnergies fails indicators 21 and 22 only — the HTML
+parse matched exactly.
 
 The same page also contains a RemoteDropdown React component encoded as a
 <div data-react-class="RemoteDropdown" data-react-props="..."> element. The

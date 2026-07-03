@@ -591,9 +591,9 @@ def test_live_totalenergies_indicators_21_and_22_are_no():
     Fetch the real TPI page for TotalEnergies and assert the known result:
     indicators 21 and 22 are "no", all others are "yes".
 
-    Known result cross-checked against an independent RBC analyst document
-    that stated TotalEnergies fails indicators 21 and 22 only. The HTML parse
-    of the live page matched exactly before this test was written.
+    Known result cross-checked against an independent asset-manager analyst
+    document that stated TotalEnergies fails indicators 21 and 22 only. The
+    HTML parse of the live page matched exactly before this test was written.
     """
     result = extract_tpi_management_quality("totalenergies")
 
@@ -620,8 +620,8 @@ def test_live_totalenergies_historical_levels():
     level 5, and max_level is 5.
 
     These data points were read directly from the real chart endpoint before
-    this test was written. Cross-checked against the same RBC document that
-    describes TotalEnergies as a TPI Level 5 company.
+    this test was written. Cross-checked against the same asset-manager
+    document that describes TotalEnergies as a TPI Level 5 company.
     """
     result = extract_tpi_management_quality("totalenergies")
 

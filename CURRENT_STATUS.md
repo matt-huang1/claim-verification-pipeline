@@ -15,12 +15,13 @@ All four verification types are implemented, tested, and live-verified end to en
 - `agent_eval/review.py` — terminal formatter for ClaimTag and pipeline result output
 - `agent_eval/ground_truth.py` — primary-source verified claims and metadata for 9 companies
 - `agent_eval/tpi_extract.py` — deterministic TPI Management Quality parser (raw HTML, no LLM)
+- `agent_eval/adversarial_eval.py` + `scripts/adversarial_eval.py` — deterministic self-evaluation of the Bucket A verifier (spoofed domains, hallucinated numbers, fabricated quotes vs. honest controls); 7/7 adversarial cases caught, offline and CI-gated
 - `scripts/run_batch.py` — batch runner producing `data/results.json`
 - `index.html` — pre-computed results browser (serve from repo root)
 
 **Ground truth companies:** TSMC, TotalEnergies, Patagonia, Antofagasta, Frontier Lithium, Vestas, Coal India, Cheniere, Microsoft — each chosen to test a specific structural gap in the verification system.
 
-**Tests:** 311 passing deterministic tests. Every module has a live API test (`RUN_LIVE_API=1`) that runs against real search results, real pages, and real models — because mocked tests cannot catch the class of bug that has actually appeared in this project.
+**Tests:** 316 passing deterministic tests. Every module has a live API test (`RUN_LIVE_API=1`) that runs against real search results, real pages, and real models — because mocked tests cannot catch the class of bug that has actually appeared in this project.
 
 **Structured log:** `logs/evaluation_log.jsonl` — every pipeline run writes a structured entry tagged with `company_name`, `bucket`, and outcome. Used for diagnosing live failures without throwaway scripts.
 

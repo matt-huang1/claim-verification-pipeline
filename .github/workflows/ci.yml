@@ -28,6 +28,9 @@ jobs:
       - name: Run tests (excluding live_api) with coverage
         run: pytest -m "not live_api" --cov=agent_eval --cov-report=term-missing
 
+      - name: Adversarial self-evaluation of the verifier
+        run: python scripts/adversarial_eval.py
+
       - name: Check formatting with black
         run: black --check .
 

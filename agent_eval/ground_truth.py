@@ -1,9 +1,11 @@
 # ground_truth.py
 """
 Verified ground-truth claims and company metadata for the agent evaluation
-framework. All entries drawn from primary-source RBC transition enabler
-assessments. Used in live tests and manual verification runs — not imported
-by any pipeline module.
+framework. All entries drawn from publicly available primary sources
+(company press releases, sustainability reports, and the public TPI and
+NZIF frameworks) that underpin transition-enabler assessments produced for
+an asset manager. Used in live tests and manual verification runs — not
+imported by any pipeline module.
 
 Each COMPANY_CLAIMS entry contains:
     allowlist: list[str] — known legitimate domains for this company
@@ -91,7 +93,7 @@ COMPANY_CLAIMS = {
                     "If Patagonia disappeared tomorrow, the climate "
                     "transition would be essentially unaffected."
                 ),
-                "notes": "Counterfactual verdict from RBC assessment",
+                "notes": "Counterfactual verdict from the asset-manager assessment",
             },
         ],
     },
