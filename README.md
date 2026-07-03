@@ -17,27 +17,9 @@ Not all claims can be verified the same way. The system classifies each claim an
 
 The system never decides whether a claim is "good enough." That judgment belongs to a human. What it does is gather, verify, and structure the evidence so the human decision is grounded in primary sources, not in what the model thinks it remembers.
 
-## What's built
+## Status
 
-All four verification types are implemented, tested, and live-verified end to end:
-
-- `src/pipeline.py` + `src/extraction.py` — Bucket A orchestration: domain check, web search, URL enforcement, page fetch, quote match with numeric token gate
-- `src/bucket_b_pipeline.py` + `src/criterion_evidence.py` — Bucket B: NZIF criteria evidence gathering (all six criteria, independently verified) and TPI Management Quality extraction (all 23 indicators, direct HTML parse)
-- `src/bucket_triage.py` + `src/source_extraction.py` + `src/reconciliation.py` + `src/bucket_c_pipeline.py` — Bucket C: triage, multi-source extraction, definition reconciliation
-- `src/bucket_d_analysis.py` + `src/bucket_d_pipeline.py` — Bucket D: assumption and causal chain extraction
-- `src/run_pipeline.py` — top-level dispatcher: routes any claim through triage to the right pipeline, consistent four-field return shape
-- `src/serialisation.py` — round-trip serialisation of all evidence types to JSON
-- `src/review.py` — terminal formatter for ClaimTag and pipeline result output
-- `src/ground_truth.py` — primary-source verified claims and metadata for 9 companies
-- `src/tpi_extract.py` — deterministic TPI Management Quality parser (raw HTML, no LLM)
-- `scripts/run_batch.py` — batch runner producing `data/results.json`
-- `index.html` — pre-computed results browser (serve from repo root)
-
-**Ground truth companies:** TSMC, TotalEnergies, Patagonia, Antofagasta, Frontier Lithium, Vestas, Coal India, Cheniere, Microsoft — each chosen to test a specific structural gap in the verification system.
-
-**Tests:** 311 passing deterministic tests. Every module has a live API test (`RUN_LIVE_API=1`) that runs against real search results, real pages, and real models — because mocked tests cannot catch the class of bug that has actually appeared in this project.
-
-**Structured log:** `logs/evaluation_log.jsonl` — every pipeline run writes a structured entry tagged with `company_name`, `bucket`, and outcome. Used for diagnosing live failures without throwaway scripts.
+All four verification types are implemented, tested, and live-verified end to end — 311 passing deterministic tests plus per-module live API tests. See [CURRENT_STATUS.md](CURRENT_STATUS.md) for the full module inventory and live-verified milestones.
 
 ## Running the results browser
 
@@ -58,11 +40,14 @@ python -m black --check src/ tests/        # formatting check
 python -m flake8 src/ tests/               # lint
 ```
 
-## What's not yet built
+## Documentation
 
-- Live verification wired to the browser UI (currently shows pre-computed results only)
-- Batch processing across all 9 ground-truth companies with cost management
-- NZIF tier-mapping consumer (`NZIF_CRITERION_TIERS` exists in `criterion_evidence.py` but nothing reads it)
-- `target_source_count` tuning for Bucket C (currently fixed at 5; revisit once more live runs exist)
+| Document | What it covers |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the system is structured: claim routing, module map, layering principles, status vocabulary |
+| [CURRENT_STATUS.md](CURRENT_STATUS.md) | What is built, tested, and live-verified today |
+| [ROADMAP.md](ROADMAP.md) | What's not yet built, and work deliberately deferred with stated triggers to revisit |
+| [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Real, current gaps — named explicitly rather than left as implicit TODOs |
+| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | The full design decision record |
 
-See `DESIGN_DECISIONS.md` for the full design trail, including every rejected alternative and every real bug found in live runs.
+See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) for the full design trail, including every rejected alternative and every real bug found in live runs.

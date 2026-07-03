@@ -1,8 +1,33 @@
 # Design Decision Record
 
-Personal reference. This is not the README — it's the thing to re-read before an interview to remember *why* each decision was made, including the approaches that were tried and rejected. The README tells a stranger what the system does. This tells me what I'd need to defend, unprompted, about any single line.
+The decision record for this project. The [README](README.md) tells a stranger what the system does; this document records *why* each decision was made, including the approaches that were tried and rejected — the full reasoning behind any single line, kept so every decision can be defended unprompted. For the resulting structure, see [ARCHITECTURE.md](ARCHITECTURE.md); for current gaps, see [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 The core thesis behind every decision in this document: **a check only counts if it would have given a different answer in the world where the claim was false.** A check that says "looks fine" regardless of truth is not a check, it's theater. This is called **non-discriminating verification** throughout, and it's the thing every fix below was correcting for.
+
+## Contents
+
+- [Origin: the failure that started this](#origin-the-failure-that-started-this)
+- [domain_check.py](#domain_checkpy--is-this-url-actually-who-it-claims-to-be) — "is this URL actually who it claims to be"
+- [quote_match.py](#quote_matchpy--does-this-quote-actually-appear-in-this-document) — "does this quote actually appear in this document"
+- [tag_schema.py](#tag_schemapy--what-does-verified-actually-mean-and-whos-allowed-to-say-it) — "what does 'verified' actually mean, and who's allowed to say it"
+- [pipeline.py](#pipelinepy--wiring-deliberately-kept-thin) — wiring, deliberately kept thin
+- [extraction.py](#extractionpy--the-one-place-a-real-model-gets-called-and-why-everything-else-stays-untouched) — the one place a real model gets called
+- [page_fetch.py](#page_fetchpy--given-a-url-we-already-trust-get-its-real-content) — "given a URL we already trust, get its real content"
+- [url_compare.py](#url_comparepy--is-this-actually-the-url-we-were-given-or-just-one-that-looks-legitimate) — "is this actually the URL we were given"
+- [Bucket B verification](#bucket-b-verification--designed-not-yet-wired-into-a-pipeline) — the evidence-structure design
+- [criterion_evidence.py](#criterion_evidencepy--the-most-direct-demonstration-of-the-projects-own-thesis-on-itself) — the project's thesis demonstrated on itself
+- [tpi_extract.py](#tpi_extractpy--adding-tpi-management-quality-and-a-real-architectural-fork-found-by-refusing-to-settle-for-treat-it-as-fixed) — TPI Management Quality
+- [Running the NZIF side live for TotalEnergies and Patagonia](#running-the-nzif-side-live-for-totalenergies-and-patagonia--a-real-diagnostic-chain-and-a-finding-that-reframed-itself-twice)
+- [Designing Bucket C](#designing-bucket-c--re-deriving-the-original-taxonomy-from-a-real-example-before-writing-any-code)
+- [source_extraction.py](#source_extractionpy--per-source-extraction-built-and-live-verified-on-the-real-tsmc-market-share-claim) — Bucket C per-source extraction
+- [bucket_b_pipeline.py](#bucket_b_pipelinepy--the-orchestrator-and-the-bug-only-a-live-run-could-find) — the Bucket B orchestrator
+- [Unifying logging across both buckets](#unifying-logging-across-both-buckets--a-real-gap-noticed-not-invented)
+- [reconciliation.py](#reconciliationpy--grouping-sources-by-shared-definition-and-the-design-decisions-that-shaped-it) — Bucket C reconciliation
+- [bucket_d_analysis.py and bucket_d_pipeline.py](#bucket_d_analysispy-and-bucket_d_pipelinepy--surfacing-reasoning-structure-for-unverifiable-claims)
+- [run_pipeline.py](#run_pipelinepy--the-top-level-dispatcher-and-the-decisions-that-shaped-it) — the top-level dispatcher
+- [serialisation.py, run_batch.py, and index.html](#serialisationpy-run_batchpy-and-indexhtml--the-results-layer) — the results layer
+- [Cross-cutting lessons](#cross-cutting-lessons)
+- [Known open limitations](#known-open-limitations-explicitly-named)
 
 ---
 
@@ -355,7 +380,9 @@ Tested three candidate fixes directly against the live API, not chosen by intuit
 
 **The bug this change caught in itself, found only by actually running the live tests, not by the deterministic suite:** mid-refactor, the `import json` statement in `extraction.py` was removed while migrating to the new shared `log_utils.append_log_entry` helper — but `_default_llm_call`, the function that parses the real OpenAI response, still depended on it. The full deterministic suite (141 tests) passed throughout, because not one of those tests exercises the real `_default_llm_call` path; every one of them injects a fake `llm_fn`. Only the live test — which actually calls OpenAI for real — surfaced the break, producing two consecutive `malformed_llm_response` failures that, on inspection of the real log (not a guess), pointed straight at the missing import. This is the same lesson as `page_fetch.py`'s chunked-encoding discovery and `bucket_b_pipeline.py`'s search-query bug, restated a third time in one project: a fully green deterministic suite proves the code's logic is internally consistent with its own assumptions, not that those assumptions about the real world — or, in this case, about a refactor's own completeness — were actually correct. Found, diagnosed by reading the real evidence, and fixed within the same session, before the change was committed.
 
+---
 
+## Cross-cutting lessons
 
 - **Two independent adversarial reviews consistently outperformed one.** Across three review rounds on `quote_match.py` alone, different reviewers found genuinely different, non-overlapping bugs, and at least one review (on the domain check) was simply wrong about there being no exploit. Confidence in a review's reasoning is not evidence; running the claimed counterexample is.
 - **A documented "we decided not to fix this" limitation got resolved later, not by trying harder at the same approach, but by realizing the earlier fixes were proxies for something specific** (real span overlap), and building the real thing. The right response to "I can't fix this" is sometimes "come back once I understand what I was actually approximating."
@@ -452,12 +479,4 @@ Tested three candidate fixes directly against the live API, not chosen by intuit
 
 ## Known open limitations, explicitly named
 
-These are real, current gaps — named here rather than left as implicit TODOs:
-
-**Patagonia bot-detection:** Patagonia's website actively blocks plain HTTP fetches, returning a holding page rather than real content. The system correctly returns `not_found_after_retries` for every NZIF criterion rather than fabricating evidence. The right fix (a browser-capable fetcher, or a disclosed scraping agreement) was explicitly deferred rather than patched reflexively, because the reusable, unattended-scale version of any bypass matters and the right answer depends on RBC's context.
-
-**Bucket C source diversity:** For the TSMC foundry market share claim, Tavily consistently returns results dominated by a single domain (`averroes.ai`). After URL deduplication, this means reconciliation receives only one unique source — not enough to establish a group. The honest result (`definitional_ambiguity_unresolved`) is correct. The underlying issue is Tavily's search result diversity for this specific claim, not a code defect. Addressable by query variation or a different search provider; deferred pending more live data on how common this pattern is across other Bucket C claims.
-
-**`target_source_count` for Bucket C:** Currently fixed at 5 at the orchestrator level. The 248-second live run suggests this may be worth reducing — but one run isn't enough data. Revisit after several runs across different claims, using the structured log to see how many of the 5 actually contributed usable findings.
-
-**Live verification not wired to the UI:** `index.html` shows pre-computed results only. The dispatcher (`run_pipeline.py`) and all four pipelines exist and work; the missing piece is a server layer that calls them on demand and streams progress to the browser.
+These are real, current gaps — named rather than left as implicit TODOs. They now live in their own document, [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md), alongside the scope limits stated at the module level throughout this record.
