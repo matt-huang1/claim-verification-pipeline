@@ -1,0 +1,221 @@
+[
+ {
+  "company": "Helios Materials",
+  "label": "Helios Materials \u2014 RE100 commitment (Bucket A)",
+  "bucket": "A",
+  "outcome": "verified",
+  "triage_reasoning": "This concerns a specific public commitment (a target date for 100% renewable energy). A single authoritative source (the company's own disclosure) would establish this present-tense fact, so it is a precisely bounded claim (bucket_a).",
+  "tag": {
+   "claim_id": "helios-a-re100",
+   "bucket": "A",
+   "claim_text": "Helios Materials is moving its target for 100 percent renewable energy consumption for all global operations forward to 2040 from 2050",
+   "overall_status": "verified",
+   "domain_evidence": {
+    "domain": "pr.heliosmaterials.example",
+    "matched_entry": "heliosmaterials.example",
+    "passed": true
+   },
+   "quote_evidence": {
+    "candidate_count": 3,
+    "status": "unique",
+    "top_score": 100.0,
+    "matched_text": "To respond to climate change, Helios Materials today announced an acceleration of its RE100 timetable, moving its target for 100% renewable energy consumption for all global operations forward to 2040 from 2050."
+   },
+   "criteria_evidence": null,
+   "tpi_evidence": null,
+   "source_plurality_evidence": null,
+   "assumptions_evidence": null,
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ },
+ {
+  "company": "Aurora Grid",
+  "label": "Aurora Grid \u2014 net-zero criteria (Bucket B)",
+  "bucket": "B",
+  "outcome": "criteria_evidence_gathered",
+  "triage_reasoning": "This claim asserts alignment with a multi-criterion net-zero standard. It cannot be settled by one quote; evidence must be gathered against each criterion, so it is a bucket_b claim.",
+  "tag": {
+   "claim_id": "aurora-b-netzero",
+   "bucket": "B",
+   "claim_text": "Aurora Grid's decarbonisation plan meets the ambition and targets criteria of the net-zero standard",
+   "overall_status": "criteria_evidence_gathered",
+   "domain_evidence": null,
+   "quote_evidence": null,
+   "criteria_evidence": [
+    {
+     "criterion_name": "ambition",
+     "criterion_text": "A long term goal consistent with the global goal of achieving net zero by 2050.",
+     "evidence_text": "To achieve its goal of net zero by 2050, Aurora Grid will strengthen green innovation and actively adopt renewable energy.",
+     "evidence_source_url": "https://pr.auroragrid.example/news/101",
+     "evidence_source_type": "official"
+    },
+    {
+     "criterion_name": "targets",
+     "criterion_text": "Short and medium term targets for scope 1, 2 and material scope 3 emissions in line with a science-based net-zero pathway.",
+     "evidence_text": "Using 2025 as a baseline, Aurora Grid commits to a 42% reduction in scope 1 and 2 emissions by 2030.",
+     "evidence_source_url": "https://pr.auroragrid.example/news/102",
+     "evidence_source_type": "official"
+    }
+   ],
+   "tpi_evidence": null,
+   "source_plurality_evidence": null,
+   "assumptions_evidence": null,
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ },
+ {
+  "company": "TotalMeridian Energy",
+  "label": "TotalMeridian Energy \u2014 TPI level (Bucket B)",
+  "bucket": "B",
+  "outcome": "tpi_data_fetched",
+  "triage_reasoning": "This claim references a company's transition-pathway assessment level. The authoritative record is a third-party dataset, so the pipeline fetches the TPI data (bucket_b).",
+  "tag": {
+   "claim_id": "meridian-b-tpi",
+   "bucket": "B",
+   "claim_text": "TotalMeridian Energy is assessed at the highest management-quality level in the transition-pathway framework",
+   "overall_status": "tpi_data_fetched",
+   "domain_evidence": null,
+   "quote_evidence": null,
+   "criteria_evidence": null,
+   "tpi_evidence": {
+    "company_tpi_id": "9001",
+    "company_slug": "totalmeridian",
+    "overall_level": 5,
+    "current_level_date": "15/12/2025",
+    "max_level": 5,
+    "indicator_results": {
+     "1": "yes",
+     "2": "yes",
+     "3": "yes",
+     "4": "yes",
+     "5": "yes",
+     "6": "yes",
+     "7": "yes",
+     "8": "yes",
+     "9": "yes",
+     "10": "yes",
+     "11": "yes",
+     "12": "yes",
+     "13": "yes",
+     "14": "yes",
+     "15": "yes",
+     "16": "yes",
+     "17": "yes",
+     "18": "yes",
+     "19": "yes",
+     "20": "yes",
+     "21": "no",
+     "22": "no",
+     "23": "yes"
+    },
+    "historical_levels": [
+     [
+      "01/07/2018",
+      3
+     ],
+     [
+      "01/09/2020",
+      4
+     ],
+     [
+      "01/11/2022",
+      4
+     ],
+     [
+      "01/12/2024",
+      5
+     ],
+     [
+      "15/12/2025",
+      5
+     ]
+    ]
+   },
+   "source_plurality_evidence": null,
+   "assumptions_evidence": null,
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ },
+ {
+  "company": "Northwind Foundry",
+  "label": "Northwind Foundry \u2014 'leading foundry' claim (Bucket C)",
+  "bucket": "C",
+  "outcome": "definitional_ambiguity_unresolved",
+  "triage_reasoning": "The claim rests on the contested term 'leading', which different sources define differently. Resolving it requires comparing definitions across sources (bucket_c).",
+  "tag": {
+   "claim_id": "northwind-c-leading",
+   "bucket": "C",
+   "claim_text": "Northwind Foundry is a leading semiconductor foundry",
+   "overall_status": "definitional_ambiguity_unresolved",
+   "domain_evidence": null,
+   "quote_evidence": null,
+   "criteria_evidence": null,
+   "tpi_evidence": null,
+   "source_plurality_evidence": {
+    "sources_checked": 1,
+    "groups": [],
+    "distinct_sources": [
+     {
+      "source_url": "https://example.com/blog/top-10-foundries",
+      "reasoning": "Only source with a stated definition \u2014 no peer to compare against."
+     }
+    ],
+    "unresolved": [],
+    "no_definition_sources": [],
+    "failed_reconciliation": [],
+    "notes": ""
+   },
+   "assumptions_evidence": null,
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ },
+ {
+  "company": "Frontier Lithium Works",
+  "label": "Frontier Lithium Works \u2014 transition enabler (Bucket D)",
+  "bucket": "D",
+  "outcome": "assumptions_explicit",
+  "triage_reasoning": "The claim is a conditional conclusion whose truth depends on assumptions about framework inputs. The pipeline surfaces those assumptions and causal steps rather than verifying a fact (bucket_d).",
+  "tag": {
+   "claim_id": "frontier-d-enabler",
+   "bucket": "D",
+   "claim_text": "Frontier Lithium Works cannot yet be classified as a transition enabler under current framework inputs",
+   "overall_status": "assumptions_explicit",
+   "domain_evidence": null,
+   "quote_evidence": null,
+   "criteria_evidence": null,
+   "tpi_evidence": null,
+   "source_plurality_evidence": null,
+   "assumptions_evidence": {
+    "assumptions": [
+     {
+      "text": "The frameworks used to classify a company as a transition enabler require verifiable emissions data.",
+      "present_in_claim": true
+     },
+     {
+      "text": "The frameworks require a stated net zero target.",
+      "present_in_claim": true
+     },
+     {
+      "text": "The required inputs do not currently exist for Frontier Lithium Works.",
+      "present_in_claim": true
+     },
+     {
+      "text": "Thus Frontier Lithium Works cannot be classified as a transition enabler under the current inputs.",
+      "present_in_claim": true
+     }
+    ],
+    "causal_steps": [
+     {
+      "text": "verifiable_emissions_data_missing \u2192 cannot_classify_as_transition_enabler",
+      "present_in_claim": true
+     },
+     {
+      "text": "stated_net_zero_target_missing \u2192 cannot_classify_as_transition_enabler",
+      "present_in_claim": true
+     }
+    ]
+   },
+   "timestamp": "2026-01-01T00:00:00+00:00"
+  }
+ }
+]

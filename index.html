@@ -274,6 +274,9 @@ main{overflow-y:auto;padding:0}
 
 <main>
   <div class="main-panel active" id="home-panel">
+    <div id="sample-banner" style="display:none;margin:0 0 16px;padding:10px 14px;border:1px solid var(--line,#2a2f3a);border-radius:8px;background:rgba(120,140,180,0.08);font-size:12.5px;color:var(--muted);line-height:1.5">
+      Showing a bundled <strong>sample dataset</strong>. Run <code>scripts/run_batch.py</code> to generate <code>data/results.json</code> from live sources; the UI will use it automatically on the next load.
+    </div>
     <div class="search-wrap">
       <div class="search-eyebrow">Climate transition research</div>
       <div class="search-heading">Verify a transition<br>enabler claim</div>
@@ -581,15 +584,28 @@ async function init(){
     document.getElementById('adv-arrow').style.transform=advOpen?'rotate(180deg)':'rotate(0deg)';
   });
 
-  // Load results
-  let results;
+  // Load results. Prefer a real pipeline run (data/results.json); if that is
+  // absent — e.g. a fresh clone that hasn't run the pipeline yet — fall back to
+  // the bundled sample dataset so the UI shows a working example immediately.
+  let results,usingSample=false;
   try{
     const r=await fetch('data/results.json');
     if(!r.ok)throw new Error('HTTP '+r.status);
     results=await r.json();
   }catch(e){
-    document.getElementById('recent-grid').innerHTML=`<div style="grid-column:1/-1;font-size:13px;color:var(--muted)">Could not load data/results.json — run scripts/run_batch.py first, then serve from repo root.</div>`;
-    return;
+    try{
+      const r=await fetch('data/sample_results.json');
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      results=await r.json();
+      usingSample=true;
+    }catch(e2){
+      document.getElementById('recent-grid').innerHTML=`<div style="grid-column:1/-1;font-size:13px;color:var(--muted)">Could not load data/results.json or data/sample_results.json — serve this page from the repo root (e.g. <code>python -m http.server</code>).</div>`;
+      return;
+    }
+  }
+  if(usingSample){
+    const b=document.getElementById('sample-banner');
+    if(b)b.style.display='block';
   }
   allResults=results;
 
