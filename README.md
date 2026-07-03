@@ -32,7 +32,7 @@ python -m http.server 8080       # serve from repo root
 ## Development
 
 ```
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env                        # add OPENAI_API_KEY and TAVILY_API_KEY
 python -m pytest -m "not live_api" -q      # full deterministic suite
 RUN_LIVE_API=1 python -m pytest -m live_api -v   # live tests (cost real API calls)
