@@ -21,4 +21,7 @@ env/
 
 .DS_Store
 
+# Pipeline output — may contain real company names, claim text,
+# and evidence excerpts from live runs. Do not commit.
 logs/
+data/results.json
