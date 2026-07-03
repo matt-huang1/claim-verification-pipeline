@@ -48,6 +48,7 @@ python -m flake8 agent_eval/ tests/               # lint
 | [CURRENT_STATUS.md](CURRENT_STATUS.md) | What is built, tested, and live-verified today |
 | [ROADMAP.md](ROADMAP.md) | What's not yet built, and work deliberately deferred with stated triggers to revisit |
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Real, current gaps — named explicitly rather than left as implicit TODOs |
-| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | The full design decision record |
+| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | Index of Architecture Decision Records (ADRs) |
+| [adr/](adr/) | Individual Architecture Decision Records, one per decision |
 
-See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) for the full design trail, including every rejected alternative and every real bug found in live runs.
+See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) for the ADR index and the full design trail, including every rejected alternative and every real bug found in live runs. Each decision is recorded as an individual ADR under [adr/](adr/).
