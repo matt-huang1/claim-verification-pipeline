@@ -1,53 +1,14 @@
-"""
-tag_schema.py
+"""ClaimTag and the typed evidence dataclasses attached to it.
 
-Defines the verification tag: the single, presentable record for one
-claim on the facts-and-figures page, built FROM the results of whichever
-checks ran against it (domain_check, quote_match, and future bucket B/C/D
-checks), not the checks themselves.
+One tag per claim, bundling every check that ran against it. Three structural
+decisions carry the module (full reasoning in adr/0004-tag-schema.md):
 
-WHY THIS EXISTS, AND WHY IT IS SHAPED THE WAY IT IS:
-
-A claim like "TSMC committed to 100% renewable electricity by 2040" needs
-two genuinely different things confirmed before it can be called verified:
-that the source is actually TSMC's own domain (domain_check), and that the
-exact claimed quote is actually in that document (quote_match). Neither
-check alone proves the claim. A spoofed domain with a perfectly matched
-quote, or a legitimate domain with a hallucinated quote, are both still
-unverified claims.
-
-DESIGN DECISION - one tag per claim, not one tag per check:
-
-If domain_check and quote_match each produced their own separate, free-
-floating tag, a human reading the facts page could see "quote match:
-unique" and stop there without realizing domain legitimacy was never
-checked, or was checked and failed. This is exactly the verification-by-
-proximity failure this whole project exists to prevent, relocated from a
-document's prose into a fragmented set of tags. Bundling both checks into
-one ClaimTag, with a single computed overall_status, makes it structurally
-visible whether a claim has been FULLY verified or only partially.
-
-DESIGN DECISION - typed evidence slots, not a generic dict:
-
-A tag whose evidence is a loosely-typed dict could be constructed with
-the wrong shape (e.g. a domain_check-shaped dict stored where quote-match
-evidence belongs) and nothing would catch it until something tried to
-read a field that wasn't there. Explicit dataclasses per evidence type
-mean a ClaimTag literally cannot be built with the wrong kind of evidence
-in the wrong slot - this is checked by the type system, not by hoping
-whoever builds the tag remembers the right shape.
-
-DESIGN DECISION - overall_status is a computed property, not a settable
-field:
-
-The whole point of a verification tag is that "verified" cannot be
-asserted without the evidence that makes it true. If overall_status were
-a plain field, it could be set to "verified" by mistake (or by a future
-bug, or by someone taking a shortcut under time pressure) without the
-underlying checks actually having passed. Making it a read-only property,
-computed FROM the attached evidence every time it's accessed, makes that
-specific failure mode structurally impossible rather than merely
-discouraged by convention.
+- One tag per claim, not one tag per check — a reviewer must never see
+  "quote match: unique" in isolation and miss that the domain check failed.
+- Typed evidence slots, not a generic dict — a tag cannot be built with the
+  wrong kind of evidence in the wrong slot; the type system enforces it.
+- overall_status is a computed, read-only property — "verified" cannot be
+  asserted, by bug or by shortcut, without the evidence that makes it true.
 """
 
 from dataclasses import dataclass, field
@@ -84,69 +45,37 @@ class QuoteMatchEvidence:
     candidate_count: int
 
 
-# Evidence types for Bucket B, C, and D checks. These were originally
-# declared as explicit placeholders before those pipelines existed, so that
-# ClaimTag.overall_status (below) had to make a real decision about every
-# bucket type from the start, instead of silently defaulting to "unknown"
-# behavior. All four bucket pipelines are now implemented and populate
-# these types (see project README, "What's built").
+# Evidence types for Bucket B, C, and D checks. All four bucket pipelines
+# populate these types.
 
 
 @dataclass(frozen=True)
 class CriterionEvidence:
     """
-    Per-criterion evidence for Bucket B verification.
-
-    Bucket B claims are not "is this number right" (Bucket A) but "does this
-    company's disclosed practice actually satisfy this specific NZIF/TPI
-    criterion." Each instance of this class captures the evidence for ONE
-    criterion. A Bucket B ClaimTag holds a list of these (one per criterion
-    checked), stored in ClaimTag.criteria_evidence.
+    Per-criterion evidence for Bucket B verification. A Bucket B ClaimTag
+    holds a list of these (one per criterion checked) in criteria_evidence.
 
     Fields:
-        criterion_name:      Short identifier for the NZIF criterion being
-                             checked (e.g. "decarbonisation_plan",
-                             "disclosure", "ambition", "targets"). Used as
-                             a key, not for display.
-        criterion_text:      The actual wording of this criterion from the
-                             real NZIF/TPI framework document — not
-                             paraphrased or recalled from memory. This is
-                             what a human reads to make the final call on
-                             whether the criterion is satisfied.
+        criterion_name:      Short identifier for the NZIF criterion (e.g.
+                             "decarbonisation_plan"). Used as a key.
+        criterion_text:      The criterion's wording from the real NZIF
+                             framework document — never paraphrased or
+                             recalled from memory.
         evidence_text:       The real source text found that is claimed to
-                             satisfy this criterion. Placed alongside
-                             criterion_text so a human can assess the match
-                             without further navigation.
-        evidence_source_url: The URL of the page or document where
-                             evidence_text was found.
-        evidence_source_type: "official" if the source is the company's own
-                             disclosure (annual report, press release, IR
-                             page); "third_party" if it is a secondary
-                             source (analyst report, news article, NGO
-                             database). Never silently treated as
-                             equivalent: a company's own claim and a third
-                             party's restatement of it are structurally
-                             different kinds of evidence.
+                             address this criterion.
+        evidence_source_url: Where evidence_text was found.
+        evidence_source_type: "official" (the company's own disclosure) or
+                             "third_party" (analyst report, news article) —
+                             structurally different kinds of evidence, never
+                             silently treated as equivalent.
 
-    Deliberately NO verdict field:
+    Deliberately NO verdict field: the system collects evidence; a human
+    reads criterion_text and evidence_text side by side and decides.
+    Automating that judgment would reintroduce the non-discriminating
+    verification failure this project exists to prevent (adr/0009).
 
-    This dataclass has no "meets_criterion: bool" or equivalent. The system
-    collects and presents evidence; a human reads criterion_text and
-    evidence_text side by side and decides whether the criterion is met.
-    Automating that judgment would reintroduce exactly the non-discriminating
-    verification failure this project exists to prevent, relocated from the
-    original paragraph-level context into a per-criterion boolean.
-
-    Known, deferred limitation — textual evidence only:
-
-    This structure captures only textual evidence. Some companies present
-    criterion-relevant evidence primarily through charts or graphs (e.g. an
-    emissions-trajectory chart with no textual equivalent). This is the same
-    class of gap as page_fetch.py's deferred table/image extraction, and is
-    deliberately not solved now: no real company in this project's ground
-    truth has yet presented a criterion's evidence in a form with no textual
-    equivalent at all (TSMC's emissions trajectory exists in both chart and
-    text form). Revisit if a real case is found where it doesn't.
+    Textual evidence only — the chart-only-evidence gap is named and
+    deferred, not solved preemptively (see KNOWN_LIMITATIONS.md).
     """
 
     criterion_name: str
@@ -161,42 +90,26 @@ class TPIManagementQualityEvidence:
     """
     Evidence for one company's TPI Management Quality assessment.
 
-    Stores the complete, real result from tpi_extract.py - all 23 indicator
-    results and the full historical assessment trend, not a summarized or
-    compressed form. Same decoupling principle as QuoteMatchEvidence: this
-    module doesn't import tpi_extract.py's internals, just the shape of data
-    a human reviewer needs.
-
-    Deliberately stores FULL detail, not a compact summary (e.g. not "1-20:
-    yes, 21-23: no" or a trend "shape" description): a range-based indicator
-    summary would silently misrepresent a company with scattered, non-
-    clustered failures (no guarantee failures cluster at the end - tested
-    against this directly before deciding), and a compressed trend
-    description would lose real information (e.g. whether a score ever
-    decreased, the true assessment count). Any compact rendering for display
-    belongs in a future presentation layer, not in this data structure - the
-    same principle CriterionEvidence and QuoteMatchEvidence already follow.
+    Stores the complete, real result from tpi_extract.py — all 23 indicator
+    results and the full historical trend, never a compacted summary (a
+    range-based summary would silently misrepresent scattered failures;
+    compact rendering belongs in a presentation layer — adr/0011).
 
     Fields:
         company_tpi_id: TPI's internal numeric company ID (e.g. "1216")
-        company_slug:   the URL slug used to fetch this data (e.g. "totalenergies")
+        company_slug:   the URL slug used to fetch this data
         overall_level:  the company's current Management Quality level (0-5)
         current_level_date: date of TPI's most recent assessment (NOT
                         necessarily when the company first reached this
-                        level - see tpi_extract.py's docstring on this
-                        distinction)
-        indicator_results: dict[int, str], all 23 real "yes"/"no" results,
-                        keyed by indicator number
+                        level — see tpi_extract.py)
+        indicator_results: dict[int, str], all 23 real results, keyed by
+                        indicator number
         historical_levels: list[tuple[str, int]], the full (date, level)
                         history from TPI's own chart data, oldest first
         max_level:      the ceiling level TPI's methodology defines (5)
 
-    Deliberately NO verdict field: same principle as CriterionEvidence - this
-    is real, deterministic, already-fetched TPI data (not a model's claim
-    needing verification), so there's no "is this adequate" judgment to
-    automate here. The judgment this evidence informs is a human's to make,
-    looking at this evidence alongside NZIF criteria evidence, exactly as
-    already done by hand in the real asset-manager analysis this project supports.
+    Deliberately NO verdict field: this is real, deterministic, already-
+    fetched TPI data, and the judgment it informs is a human's to make.
     """
 
     company_tpi_id: str | None  # None if TPI's dropdown was absent from the page
@@ -233,14 +146,10 @@ class SourceFinding:
                       digit or percentage (e.g. "60%", "3.2 billion"). False
                       if it appears as a word-stated approximation ("roughly
                       half") or qualitative description ("dominant share").
-                      False — not None — when value_found is False: a missing
-                      value has no form, so False is the honest, non-nullable
-                      answer, not a sentinel None that would require callers to
-                      special-case it separately from the value_found flag they
-                      already have. The same principle as CriterionEvidence's
-                      no-verdict design: don't introduce a second, parallel way
-                      to say "not applicable" when one boolean already
-                      communicates it unambiguously.
+                      Always False — not None — when value_found is False,
+                      so callers never special-case a second "not
+                      applicable" sentinel alongside the value_found flag
+                      they already have.
         value_verification_status: The quote_match status for claimed_value,
                       or None if value_found is False (verification was never
                       attempted on a value the model never claimed to have).

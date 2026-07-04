@@ -1,40 +1,15 @@
-"""
-llm_client.py
+"""The provider seam: the single place the concrete LLM provider is named.
 
-The single place the concrete LLM provider is named. Every LLM-calling module
-in this package (extraction, bucket_triage, criterion_evidence, source_extraction,
-reconciliation, bucket_b_pipeline, bucket_d_analysis) builds its own prompts and
-parses its own JSON, but delegates the actual API call here.
+Every LLM-calling module builds its own prompts and parses its own JSON, but
+delegates the transport here. The interface is exactly the shape every call
+site already used — `complete_json(system, user) -> str` — so prompt
+construction and response parsing stay in the calling module where the
+claim/bucket-specific knowledge belongs.
 
-WHY THIS EXISTS:
-
-Before this module, the same transport block — `from openai import OpenAI;
-client.chat.completions.create(model=..., messages=[system, user],
-response_format={"type": "json_object"}); json.loads(...)` — was copy-pasted into
-seven call sites across six modules, and each independently hard-coded the model
-default (`gpt-5-nano`). Swapping provider or model meant editing seven places and
-hoping they matched. Concentrating the provider behind one small interface makes
-that a one-file change: the pipeline depends on the CAPABILITY (turn a
-system+user prompt into a JSON string), not on OpenAI specifically.
-
-WHY THE INTERFACE IS `complete_json(system, user) -> str`:
-
-Every existing call site used exactly this shape — a system prompt, a single user
-message, and OpenAI's JSON-object response mode — and each then ran
-`json.loads()` on the returned text. So the shared, provider-specific part is
-precisely "given two strings, return the model's raw text reply." Prompt
-construction and response parsing stay in the calling module, where the
-claim/bucket-specific knowledge belongs; only the transport is centralised.
-
-SWAPPING PROVIDER:
-
-To run against Anthropic, Azure OpenAI, or an on-prem model, implement a class
-with the same single `complete_json` method and make it the default client. No
-other module changes, because none of them import a provider SDK directly.
-
-The default provider and model are still overridable at runtime via the
-OPENAI_MODEL environment variable, read once when the default client is
-constructed — the same timing as the module-level constants this replaced.
+To swap provider (Anthropic, Azure OpenAI, on-prem), implement a class with
+the same single method and make it the default client; no other module
+imports a provider SDK. The default model is overridable via OPENAI_MODEL,
+read once when the default client is constructed.
 """
 
 import os

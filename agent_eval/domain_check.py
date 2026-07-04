@@ -1,13 +1,9 @@
-"""
-domain_check.py
+"""URL-domain legitimacy check against a caller-supplied allowlist.
 
-Checks whether a given URL's domain matches an allowlist of known-legitimate
-domains for a given entity. This module knows nothing about companies, claims,
-or buckets — it only knows URLs and allowlists. Generic by design, so the same
-function works regardless of which company or claim is being checked.
-
-This is a deterministic check: given the same URL and the same allowlist, the
-result is always identical. No model, no judgment call, no probability.
+Generic and fully deterministic: no companies, no claims, no model call. The
+matching rules exist to defeat two confirmed spoofing patterns (prefix domains
+and port injection) — see check_domain's docstring for the constraints and
+adr/0002-domain-check.md for how each bypass was found.
 """
 
 from urllib.parse import urlparse
@@ -30,38 +26,21 @@ def check_domain(url: str, allowlist: list[str]) -> dict:
     Matching logic: a URL's domain passes if it is exactly equal to an
     allowlist entry, OR if it is a subdomain of an allowlist entry
     (e.g. "pr.tsmc.com" passes against allowlist entry "tsmc.com").
-    This is still fully deterministic — there is no fuzziness here, only
-    exact string comparison after parsing.
 
-    IMPORTANT — do not "simplify" this to startswith() or a substring check.
-    This function deliberately uses endswith(domain, "." + entry) rather than
-    startswith() or `entry in domain`. This matters for security, not just
-    style:
+    Two constraints are load-bearing for security (both correspond to
+    confirmed, working bypasses — see adr/0002-domain-check.md):
 
-        "pr.tsmc.com"        endswith ".tsmc.com" -> True  (legitimate subdomain)
-        "tsmc.com.evil.com"  endswith ".tsmc.com" -> False (spoofed domain, correctly rejected)
-        "tsmc.com.evil.com"  startswith "tsmc.com" -> True (would WRONGLY pass)
+    - Suffix matching must stay endswith("." + entry), never startswith()
+      or substring containment: "tsmc.com.evil.com" contains the real
+      domain as a prefix (a real spoofing pattern) and must fail, which
+      only an anchored suffix check guarantees.
+    - The host must come from parsed.hostname, never parsed.netloc:
+      netloc includes ports and credentials, so
+      "https://evil.com:.tsmc.com/" yields a netloc ending in ".tsmc.com"
+      (would wrongly pass) while hostname is "evil.com" (correctly fails).
 
-    A domain like "tsmc.com.evil.com" contains the real domain as a prefix,
-    a real-world spoofing pattern. Checking startswith() or plain substring
-    containment would let this kind of spoofed domain pass. Checking
-    endswith() on the entry anchored with a leading "." is what prevents it,
-    because the real domain must be the suffix, not just present somewhere
-    in the string.
-
-    SECOND VULNERABILITY, FOUND AND FIXED VIA ADVERSARIAL MODEL REVIEW:
-    An earlier version of this function used parsed.netloc instead of
-    parsed.hostname. netloc includes the port and any embedded credentials,
-    not just the host. This allowed a port-injection bypass:
-
-        url = "https://evil.com:.tsmc.com/fake-news"
-        parsed.netloc   -> "evil.com:.tsmc.com"  (ends with ".tsmc.com" -> WRONGLY PASSES)
-        parsed.hostname -> "evil.com"            (correctly identifies the real host)
-
-    This was confirmed as a live, working bypass against this exact function
-    (not just a theoretical urlparse quirk) before being fixed. Using
-    parsed.hostname instead of parsed.netloc strips ports and credentials
-    before comparison, closing this bypass. Do not revert to netloc.
+    Both attacks are permanently regression-tested in the adversarial
+    self-evaluation suite (agent_eval/adversarial_eval.py).
     """
     parsed = urlparse(url)
     domain = (parsed.hostname or "").lower()

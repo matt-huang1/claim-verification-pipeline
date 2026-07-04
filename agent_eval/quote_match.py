@@ -1,90 +1,25 @@
-"""
-quote_match.py
+"""Fuzzy quote-vs-document matching with ambiguity detection and a numeric gate.
 
-Checks whether a claimed quote actually appears in a source document's text,
-using fuzzy substring matching. This module knows nothing about companies,
-claims, dates, or buckets — it only knows strings. Generic by design, for
-the same reason domain_check.py is generic: the same function should work
-for any claim, against any document, regardless of what the claim is about.
+Checks whether a claimed quote actually appears in a source document. Generic
+and fully deterministic: no companies, no claims, no model call — the same
+inputs always produce the same result.
 
-This is a deterministic check in the sense that matters: given the same
-quote and the same document text, the result is always identical. There is
-no model call inside this function, no judgment, no randomness. The scores
-it produces are a pure computation (character-level similarity), not a
-probability estimate from a language model.
+Two properties make this a discriminating check rather than a best-match pick:
 
-KEY DESIGN DECISION — ambiguity detection, not just "best match":
+- Ambiguity is detected, never silently resolved. The top candidates are
+  returned with scores, and "unique" vs "ambiguous" is decided by the GAP
+  between the #1 and #2 scores, not the #1 score alone.
+- The numeric token gate: every number/year/percentage in the claimed quote
+  must literally appear in the matched span (exact set comparison) before a
+  result can be "unique". Scope limit: this only catches numeric
+  hallucinations — a wrong non-numeric word ("REJECTED" vs "APPROVED") still
+  passes and needs a different mechanism, deliberately not attempted here.
 
-A naive version of this function would return only the single best-matching
-substring. That has a real failure mode: if the AI extracts a quote that is
-too short or generic (e.g. just "2040" in a document that mentions several
-different dates), the "best match" could be any one of several places in
-the document that match almost equally well, and a single silent pick would
-hide that ambiguity entirely.
-
-This function always returns the top 3 candidate matches with their scores,
-and explicitly flags the result as "unique" or "ambiguous" based on the GAP
-between the #1 and #2 scores, not the absolute score of the #1 match alone.
-
-DESIGN HISTORY — four attempts, the last one is the simplification:
-
-Attempt 1: hand-rolled sliding window, deduplicated by position distance.
-A proxy for "same real match", not the real thing. Adversarial review
-found a confirmed self-collision bug: a single isolated quote could be
-split into two "different" candidates that both scored 100, because two
-overlapping windows (one padded before the match, one after) cleared the
-position-distance dedup check despite covering the same real text.
-
-Attempt 2: deduplicate by whole-window text similarity instead of position.
-Tested directly: didn't fix self-collision, and made the close-claims
-problem worse (silently merged "2040" and "2050" into one candidate).
-
-Attempt 3: keep the hand-rolled sliding window, but recover the actual
-matched span via fuzz.partial_ratio_alignment and deduplicate by real
-span overlap. This fixed both attempt-1 problems correctly. But while
-verifying it against real press-release text, a separate bug surfaced:
-the FIXED WINDOW SIZE could truncate a genuine multi-number match before
-reaching all the numbers, depending on exactly where incidental
-formatting (a newline, even just different indentation) fell relative to
-the window boundaries. Tuning window_slack and step size did not fix
-this reliably — results were not monotonic with slack, and a combination
-that fixed one test string did not generalize to a near-identical one.
-
-Attempt 4 (current): stop hand-rolling windows entirely. Call
-fuzz.partial_ratio_alignment ONCE directly on the full document — this is
-what the library is actually designed to do, and it finds the
-best-aligned substring without needing a window size to be guessed in
-advance. To find multiple distinct candidates (for ambiguity detection),
-mask out each match after finding it and search again, which guarantees
-no overlap by construction rather than needing a separate dedup function.
-A small fixed padding (PAD_CHARS) is added around each recovered span,
-because partial_ratio_alignment's matched span is bounded to the length
-of the shorter string (the quote), so it can clip a trailing token by a
-few characters when the source text has minor whitespace differences.
-This padding is NOT a re-introduction of the old window-size guessing —
-the match position itself is already correctly found; the padding is
-just a small safety margin around a position that is already known to
-be right, which is a fundamentally more robust kind of slack than trying
-to guess where an unknown match might fall.
-
-NUMERIC TOKEN GATE:
-
-Found via adversarial review — the single most serious bug found in this
-module: character-level similarity (fuzz.partial_ratio) cannot
-distinguish a correct quote from one where the AI changed the single
-most load-bearing token (a year, a percentage, a dollar figure). A
-hallucinated year that appears NOWHERE in the source document still
-scored 97%+ and was flagged "unique" before this gate existed — the
-project's own named failure mode, non-discriminating verification,
-demonstrated inside its own verification tool.
-
-Every number/year/percentage in the claimed quote must literally appear
-in the matched span, checked by exact set comparison, not fuzzy
-similarity, before a result can be "unique". SCOPE LIMIT, stated
-explicitly: this only catches hallucinations where the wrong token is
-numeric. A claim like "the board REJECTED the proposal" vs a source
-that says "APPROVED" would still pass, since neither word is a number.
-That class of error needs a different mechanism and is not attempted here.
+Candidates are found by calling fuzz.partial_ratio_alignment on the full
+document, masking out each match, and searching again — non-overlap is
+guaranteed by construction. The design history (four deduplication attempts,
+the hallucinated-year bug the numeric gate exists to catch) is recorded in
+adr/0003-quote-match.md.
 """
 
 from dataclasses import dataclass

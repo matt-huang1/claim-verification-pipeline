@@ -1,36 +1,13 @@
-"""
-pipeline.py
+"""Bucket A wiring: domain_check + quote_match + tag_schema in one pass.
 
-Orchestration for a single Bucket A claim: wires together the three
-generic, independently-tested modules (domain_check, quote_match,
-tag_schema) into one verification pass.
+No LLM call lives here — claim text, source URL, and quote are direct inputs,
+keeping this pipeline deterministic and testable with no API key. The
+model-driven step that produces these inputs is extraction.py, upstream.
 
-DELIBERATE SCOPE BOUNDARY - no AI/LLM call lives here. The claim text,
-source URL, and claimed quote are all supplied as direct inputs, not
-extracted by a model. This keeps the whole pipeline deterministic and
-testable with no API key, exactly like domain_check.py and quote_match.py.
-The model-driven extraction step that produces these inputs (extraction.py)
-is a separate concern, upstream of this file; mixing it in here would make the
-pipeline impossible to test without a live model and would reintroduce
-non-determinism into the one place that is supposed to be the trustworthy,
-checkable core.
-
-THREE FUNCTIONS, SPLIT ON PURPOSE:
-
-1. run_bucket_a_checks - the only function that touches the actual checks.
-   It needs real URLs/documents to test meaningfully.
-2. build_bucket_a_tag - pure assembly: raw check results in, a ClaimTag
-   out. Testable with hand-built fake inputs, no real check running.
-3. verify_bucket_a_claim - the thin convenience wrapper most callers use.
-
-Functions 1 and 2 are where the real work and the real extensibility live:
-a different bucket, or a different mix of checks, is built by recombining
-those two pieces. Function 3 exists only because the common case (run the
-checks, then wrap them) is so common that forcing every caller to spell it
-out in two steps would be noise. It is convenience, not flexibility - the
-flexibility is precisely that 1 and 2 are separable, so a caller who needs
-something other than the standard recipe can drop function 3 and use them
-directly.
+Three functions, split on purpose: run_bucket_a_checks (the only function
+that touches the real checks), build_bucket_a_tag (pure assembly, testable
+with fakes), and verify_bucket_a_claim (the convenience recipe chaining the
+two). Rationale in adr/0005-pipeline.md.
 """
 
 from agent_eval.domain_check import check_domain
