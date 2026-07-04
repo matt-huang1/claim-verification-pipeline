@@ -1,49 +1,22 @@
+"""Bucket C orchestrator: triage -> source gathering -> reconciliation.
+
+Wiring only. target_source_count is deliberately not re-exposed here (the
+orchestrator has no opinion about the right value — that lives with
+gather_source_findings's default); no orchestrator-level logging (each
+step's own module already writes its structured entry); and no retry logic
+(each underlying function handles its own retries, and orchestrator-level
+retry would paper over failures they already report honestly).
+Design context: adr/0013-designing-bucket-c.md and adr/0018-reconciliation.md.
 """
-bucket_c_pipeline.py
 
-Orchestrator for Bucket C: given a claim text and an allowlist, runs
-triage → source gathering → reconciliation and returns a result dict
-describing the outcome.
-
-DESIGN DECISIONS:
-
-WHY target_source_count IS NOT EXPOSED AT THE ORCHESTRATOR LEVEL:
-
-target_source_count is intentionally not a parameter of
-run_bucket_c_pipeline. It uses gather_source_findings's own default
-(currently 5). The orchestrator's job is to wire steps together, not
-to re-expose every knob of every step. Exposing target_source_count
-here would imply the orchestrator has an opinion about what the right
-value is for a given claim type — it does not. If a real live run shows
-that a specific claim type consistently needs more or fewer sources,
-the right place to change this is gather_source_findings's default, not
-a per-call override at the orchestrator level.
-
-WHY THE ORCHESTRATOR ADDS NO LOGGING OF ITS OWN:
-
-reconcile_sources already writes one structured log entry per call
-covering the full Bucket C outcome (sources_checked, groups_found,
-distinct_count, unresolved_count, outcome, etc.). Adding a second
-orchestrator-level entry would duplicate information already in the log.
-This contrasts with bucket_b_pipeline.py, which IS the only place that
-logs (criterion_evidence.py has no logging of its own). Here each step's
-own module handles its concerns; the orchestrator just wires them.
-
-WHY NO RETRY LOGIC:
-
-Each underlying function handles its own retries. triage_claim's
-"ambiguous" outcome is a stable finding, never retried.
-reconcile_sources retries the LLM call internally (up to
-_MAX_RECONCILIATION_ATTEMPTS) and surfaces failure honestly in the
-returned SourcePluralityEvidence. Adding retry at the orchestrator level
-would paper over failures that are already honestly reported by the
-functions themselves.
-"""
+from typing import Callable
 
 from agent_eval.bucket_triage import triage_claim
+from agent_eval.page_fetch import FetchResult
 from agent_eval.reconciliation import reconcile_sources
 from agent_eval.source_extraction import gather_source_findings
 from agent_eval.tag_schema import ClaimTag
+from agent_eval.web_search import SearchResult
 
 
 def run_bucket_c_pipeline(
@@ -52,12 +25,12 @@ def run_bucket_c_pipeline(
     *,
     company_name: str,
     claim_id: str,
-    triage_llm_fn=None,
-    search_fn=None,
-    url_llm_fn=None,
-    fetch_fn=None,
-    finding_llm_fn=None,
-    reconciliation_llm_fn=None,
+    triage_llm_fn: Callable[[str], dict] | None = None,
+    search_fn: Callable[[str], list[SearchResult]] | None = None,
+    url_llm_fn: Callable[[str, list[SearchResult]], dict] | None = None,
+    fetch_fn: Callable[[str], FetchResult] | None = None,
+    finding_llm_fn: Callable[[str, str], dict] | None = None,
+    reconciliation_llm_fn: Callable[[str, list[dict], str | None], dict] | None = None,
     log_dir: str = "logs",
 ) -> dict:
     """

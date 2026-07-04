@@ -1,81 +1,36 @@
-"""
-source_extraction.py
+"""Bucket C per-source extraction: value + definition, each verified.
 
-Bucket C per-source extraction: given a document already in hand (same
-"document already fetched" assumption as criterion_evidence.py) and a claim,
-propose a claimed value and its stated definition, each independently
-verified against the real document via quote_match — never trusted on the
-model's word alone.
+Given a document already in hand and a claim, propose the claimed value and
+its stated scope definition, each independently verified against the real
+document via quote_match — never trusted on the model's word alone.
 
-TWO-FIELD HONEST-ABSENCE DESIGN:
+Key decisions (full reasoning in adr/0014-source-extraction.md):
 
-A model needs a legitimate way to say "no value found" AND a separate
-legitimate way to say "no definition found." These are genuinely independent:
-a source can state a figure without defining its scope ("TSMC held 60% of the
-market"), or define a scope without quoting a figure, or do both, or neither.
-Collapsing them into one "found" flag would force the model to report "not
-found" whenever either field is absent, losing real, partial information.
-This is the same design as criterion_evidence.py's `found: false` — applied
-twice over rather than once.
-
-WHY is_literal_value IS A FORM-BASED QUESTION, NOT A CONFIDENCE JUDGMENT:
-
-is_literal_value asks whether the claimed value appears in the text as a
-literal digit or percentage (e.g. "60%") versus a word-stated approximation
-("roughly half") or qualitative description ("dominant share"). This is a
-mechanical, surface-form question — not a judgment about the claim's
-certainty or vagueness. The distinction matters because a human reviewing
-multiple sources needs to see, at a glance, whether sources are quoting real
-figures or only qualitative descriptions — but mixing "the number was fuzzy"
-with "the number was a word, not a digit" would conflate a confidence
-judgment with a form judgment. Only the form judgment belongs here; the
-system prompt explicitly states this to avoid the same hedge-word-misleads-
-classification trap already identified and rejected in bucket_triage.py.
-
-FLOOR RULE — why "partial success" is still a real finding:
-
-A source that states a definition but no value, or a value that passes
-quote_match but whose definition fails, is still genuinely informative for
-Bucket C: it contributes real evidence about how one source defines the
-scope even if it doesn't complete the picture. The floor is only applied
-when NEITHER field produced a verified result — that source truly contributed
-nothing checkable, and is omitted rather than placeholded.
-
-NO RETRY LOOP IN find_source_finding:
-
-A single quote_match rejection is recorded honestly in verification_status
-as useful real information (a source that claimed something unverifiable is
-itself informative), not something to retry past. This differs from
-criterion_evidence.py (which retries because "not found" might mean the model
-read too quickly) and extraction.py (which retries because a bad URL or quote
-is fixable by trying differently). Here there is no retry because the finding
-— including any failed verification — is the real result, not an intermediate
-step on the way to a different result.
-
-ALLOWLIST FOR BUCKET C — AN OPEN QUESTION EXPLICITLY FLAGGED:
-
-In Bucket A and B, allowlist means "domains that count as the company's own
-official disclosure" — and a verified source on an off-allowlist domain counts
-against the claim. For Bucket C, the character of the evidence is different:
-there is no single authoritative source by definition, and third-party analyst
-reports (IC Insights, TrendForce, IDC) are the natural, expected evidence.
-The allowlist here is used only to determine source_type ("official" vs
-"third_party") on each SourceFinding — not to gate or reject any result.
-A Bucket C live test with TSMC's market-share claim should expect most or
-all findings to be "third_party," and that is correct, not a failure.
-This differs enough from Bucket A's use of allowlist that it is worth naming
-explicitly rather than silently inheriting the same pattern.
+- Two independent honest-absence fields (value_found, definition_found): a
+  source can state a figure without defining scope, or the reverse, and
+  collapsing them into one flag would lose real partial information.
+- is_literal_value is a form-based question (is there a literal digit?),
+  never a confidence judgment — "roughly 60%" is True because "60%" is a
+  digit, avoiding the hedge-word trap rejected in bucket_triage.py.
+- Floor rule: a finding is kept if at least one of the two fields verified;
+  a source contributing nothing checkable is omitted, not placeholded.
+- No retry loop: a failed verification is itself the real result here, not
+  an intermediate step — unlike extraction.py's fixable-proposal retries.
+- allowlist only labels source_type ("official"/"third_party"); it never
+  gates a result. Mostly-third-party findings are the expected, correct
+  outcome for a definitionally contested claim.
 """
 
 import json
+from typing import Callable, cast
 
 from agent_eval.domain_check import check_domain
 from agent_eval.llm_client import default_complete_json
-from agent_eval.page_fetch import fetch_page_text
+from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.quote_match import match_quote
 from agent_eval.tag_schema import SourceFinding
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import search_for_source
+from agent_eval.web_search import SearchResult, search_for_source
 
 # Total attempt cap = target_source_count * this multiplier. Stops the loop
 # when a claim genuinely has few findable sources, without bounding target_count
@@ -144,7 +99,7 @@ def find_source_finding(
     claim_text: str,
     source_url: str,
     source_type: str,
-    llm_fn=None,
+    llm_fn: Callable[[str, str], dict] | None = None,
 ) -> SourceFinding | None:
     """
     Extract and verify a claimed value and definition from `document`.
@@ -242,7 +197,7 @@ _URL_SELECTION_SYSTEM_PROMPT = (
 
 def _default_url_selection_llm_call(
     claim_text: str,
-    search_results: list[dict],
+    search_results: list[SearchResult],
 ) -> dict:
     """Select the best candidate URL from search results. Tests inject a fake."""
     candidates_text = "\n".join(
@@ -264,10 +219,10 @@ def gather_source_findings(
     claim_text: str,
     allowlist: list[str],
     target_source_count: int = 5,
-    search_fn=None,
-    url_llm_fn=None,
-    fetch_fn=None,
-    finding_llm_fn=None,
+    search_fn: Callable[[str], list[SearchResult]] | None = None,
+    url_llm_fn: Callable[[str, list[SearchResult]], dict] | None = None,
+    fetch_fn: Callable[[str], FetchResult] | None = None,
+    finding_llm_fn: Callable[[str, str], dict] | None = None,
 ) -> list[SourceFinding]:
     """
     Gather up to `target_source_count` verified SourceFindings for `claim_text`.
@@ -343,7 +298,9 @@ def gather_source_findings(
             fetch_result = _fetch_fn(url)
             if not fetch_result["success"]:
                 continue
-            document = fetch_result["text"]
+            # success=True guarantees text is a str (FetchResult contract);
+            # the cast is annotation-only.
+            document = cast(str, fetch_result["text"])
             fetch_cache[url] = document
 
         # --- source type ---

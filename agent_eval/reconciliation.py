@@ -1,60 +1,28 @@
-"""
-reconciliation.py
+"""Bucket C reconciliation: group sources by shared real-world scope.
 
-Bucket C reconciliation: given a list of SourceFindings already gathered by
-source_extraction.py, group the definition-bearing sources by whether they
-share the same underlying real-world scope, and return a SourcePluralityEvidence
-record that accounts for every input source exactly once.
+Given the SourceFindings gathered by source_extraction.py, group the
+definition-bearing ones by whether they describe the same underlying scope,
+and return a SourcePluralityEvidence that accounts for every input source
+exactly once. Three steps: a deterministic split (no LLM when 0 or 1
+definition-bearing sources remain), one batch LLM call, then validation with
+one feedback-guided retry.
 
-THREE STEPS:
+Key decisions (full reasoning in adr/0018-reconciliation.md):
 
-  1. Deterministic split (no LLM): route sources with definition_found=False
-     directly to no_definition_sources. If 0 or 1 definition-bearing sources
-     remain, return immediately without any LLM call.
-
-  2. LLM call: pass all definition-bearing sources to the model in one batch.
-     The model places each source_url into groups (2+ sharing a scope),
-     distinct (confidently different), or unresolved (unclear).
-
-  3. Validation + retry: a response is malformed if any source_url is missing,
-     hallucinated, duplicated, or if any group has fewer than 2 members, or if
-     any entry is missing a non-empty reasoning field. On malformed attempt 1,
-     retry once with specific feedback. If attempt 2 also fails, every
-     definition-bearing source goes into failed_reconciliation.
-
-WHY ONE BATCH CALL, NOT ONE-PAIR-AT-A-TIME:
-
-  Comparing sources pairwise (A vs B, A vs C, B vs C, ...) would require O(n²)
-  LLM calls and would force the model to make n(n-1)/2 independent decisions
-  that may not be mutually consistent (A grouped with B, B grouped with C, but
-  A distinct from C — a logical contradiction the batch call cannot produce).
-  A single batch call over all sources is both cheaper and structurally more
-  coherent: the model sees all definitions simultaneously and must produce a
-  globally consistent assignment.
-
-WHY failed_reconciliation IS DISTINCT FROM unresolved:
-
-  "Unresolved" is a genuine judgment outcome: the model read the definition
-  and concluded "I cannot confidently place this." That is a real, informative
-  finding about the source's definition quality. "failed_reconciliation" means
-  the model never produced a usable response at all after retries — a
-  processing failure, not a judgment. Collapsing them would make it impossible
-  for a human reviewer to distinguish "this source's definition was genuinely
-  ambiguous" from "the model broke trying to read it."
-
-WHY THE WHOLE RESPONSE IS INVALIDATED ON ANY DEFECT:
-
-  Partially trusting a malformed response (e.g. keeping the groups that parsed
-  correctly while discarding entries with missing reasoning) would produce
-  silently incomplete output — some sources would be neither in the good part
-  of the response nor in failed_reconciliation, effectively dropped. The only
-  honest handling of a malformed response is to treat the whole batch as
-  unprocessed and retry, then if still failing, move everything to
-  failed_reconciliation. Nothing is ever silently dropped.
+- One batch call, never pairwise: pairwise comparison costs O(n^2) calls and
+  can produce intransitive contradictions (A~B, B~C, A distinct from C) that
+  a single globally consistent assignment cannot.
+- failed_reconciliation is distinct from unresolved: one is a processing
+  failure (no usable response after retries), the other a genuine judgment
+  ("this definition is too vague to place") — a reviewer must be able to
+  tell them apart.
+- Any structural defect invalidates the whole response: partially trusting a
+  malformed response would silently drop sources. Nothing is ever dropped.
 """
 
 import json
 from datetime import datetime, timezone
+from typing import Callable
 
 from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
@@ -288,7 +256,7 @@ def reconcile_sources(
     findings: list[SourceFinding],
     *,
     company_name: str,
-    llm_fn=None,
+    llm_fn: Callable[[str, list[dict], str | None], dict] | None = None,
     log_dir: str = "logs",
 ) -> SourcePluralityEvidence:
     """

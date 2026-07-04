@@ -1,85 +1,26 @@
-"""
-criterion_evidence.py
+"""Bucket B: find and verify one NZIF criterion excerpt in a given document.
 
-Bucket B evidence-gathering: given a document already in hand and one specific
-NZIF 2.0 alignment criterion, find and verify a real excerpt from the document
-that addresses that criterion.
+Does exactly one thing: given document text already in hand and one NZIF 2.0
+criterion, find and verify a verbatim excerpt addressing it. Search, URL
+selection, and fetching happen upstream (bucket_b_pipeline.py).
 
-SCOPE — this module does exactly one thing:
+Key decisions (full reasoning in adr/0010-criterion-evidence.md):
 
-It does NOT find sources, fetch documents, or run web searches. That work is
-already done by web_search.py, url_compare.py, and page_fetch.py, called by
-whatever orchestrates Bucket B claims before this module runs. This module's
-only job is: given document text already in hand, and one criterion, find and
-verify the excerpt addressing it.
-
-WHY CRITERIA TEXT IS HARDCODED, NOT SEARCHED FOR:
-
-NZIF 2.0's alignment criteria table is a static primary-source document.
-The criteria wording is known, fixed, and already used in the project
-(see tag_schema.py's CriterionEvidence.criterion_text). Searching for or
-re-deriving it on each run would introduce a model-mediated restatement
-of the criterion — exactly what criterion_text is designed to prevent by
-requiring the real wording. The criteria are hardcoded in NZIF_CRITERIA
-below, sourced from the IIGCC Net Zero Investment Framework 2.0 (2024).
-
-DATED STARTING ASSUMPTION: the criteria text below was transcribed directly
-from the primary source PDF (IIGCC, Net Zero Investment Framework 2.0,
-https://www.iigcc.org/hubfs/NZIF%202.0%20Report%20PDF.pdf, "Criteria
-underpinning alignment assessment" table) by the user on 2026-06-26.
-The original version of this dict was found, on review, to not match the
-primary source — it was an LLM reconstruction that invented Scope 1/2/3
-detail under "ambition", included a "capital_allocation" criterion that
-does not exist in the real table, and was missing "emissions_performance"
-entirely. The current text is the corrected, user-transcribed version.
-If IIGCC releases a new NZIF version, this hardcoded text needs manual
-review and update. No automated staleness check is warranted: NZIF
-revisions are rare (1.0 in 2021, 2.0 in 2024) and the cost of an
-automated diff-and-flag system isn't justified at that frequency. The
-same "documented starting assumption" pattern is used for
-AMBIGUITY_GAP_THRESHOLD in quote_match.py and NO_PROGRESS_SCORE_DELTA
-in extraction.py.
-
-WHY "FOUND: FALSE" IS A RETRYABLE OUTCOME, NOT A TERMINAL ONE:
-
-Giving the model an explicit `found: false` response option is a deliberate
-design decision. A model without a legitimate "I don't know" option tends
-to produce a plausible-but-wrong answer rather than admit it doesn't have
-one — observed behavior in extraction.py's live runs. Accepting `false`
-and retrying with corrective feedback (rather than immediately giving up)
-is consistent with the same retry-with-feedback pattern used throughout
-the extraction loop: one "not found" may mean the model read too quickly,
-not that the criterion is genuinely absent.
-
-WHY quote_match AND _build_feedback ARE REUSED DIRECTLY:
-
-quote_match.match_quote() is the project's existing deterministic check
-that a claimed excerpt actually appears in the source text. Reimplementing
-it here — even a simplified version — would create two different
-implementations of the same check, diverging over time. A model claiming
-to have found something does not make it real; quote_match is what makes
-it real, the same principle applied throughout Bucket A.
-
-_build_feedback() in extraction.py already knows how to describe every
-quote_match failure status in corrective terms the model can act on.
-The failures here (ambiguous, no_match, numeric_mismatch, quote_too_short)
-are identical in kind to Bucket A failures of the same names, so the
-same feedback applies. Duplicating that logic here would also diverge.
-
-RETRY STOPPING:
-
-extraction.py's no_meaningful_progress() is reused directly. CriterionAttemptRecord
-carries the same three fields it uses (stage_reached, status, top_score),
-so no duck-typing ceremony is needed. This module's stages are named for
-what they actually are here:
-  "malformed_llm_response" — LLM response could not be parsed
-  "criterion_not_found"    — model returned found=false
-  "quote_match_failed"     — model returned found=true but quote_match rejected the excerpt
-  "excerpt_verified"       — quote_match confirmed the excerpt; success
+- NZIF_CRITERIA is hand-transcribed from the primary-source PDF, not searched
+  for or model-derived — the original dict was an LLM reconstruction that
+  invented and omitted real criteria, caught only by checking against the
+  actual document. Dated transcription notes live on the constants below.
+- `found: false` is a legitimate, retryable model response: without an
+  explicit "not found" option, models produce plausible-but-wrong answers
+  instead of admitting absence (observed live in extraction.py).
+- quote_match and extraction.py's _build_feedback/no_meaningful_progress are
+  reused directly rather than reimplemented, so the check and its corrective
+  feedback cannot diverge between buckets.
 """
 
 import json
 from dataclasses import dataclass
+from typing import Callable
 
 from agent_eval.extraction import (
     NO_PROGRESS_SCORE_DELTA,
@@ -89,10 +30,12 @@ from agent_eval.extraction import (
 from agent_eval.llm_client import default_complete_json
 from agent_eval.quote_match import match_quote
 
-# NZIF 2.0 alignment criteria, transcribed verbatim from the primary source PDF:
-# IIGCC, Net Zero Investment Framework 2.0, "Criteria underpinning alignment
-# assessment" table. User-transcribed on 2026-06-26. See module docstring for
-# the full "dated starting assumption" note.
+# NZIF 2.0 alignment criteria, transcribed verbatim from the primary source PDF
+# (IIGCC, Net Zero Investment Framework 2.0, "Criteria underpinning alignment
+# assessment" table; hand-transcribed 2026-06-26). A golden-file test locks in
+# the exact wording. If IIGCC releases a new NZIF version this needs manual
+# review — revisions are rare (1.0 in 2021, 2.0 in 2024), so no automated
+# staleness check is warranted. See adr/0010-criterion-evidence.md.
 #
 NZIF_CRITERIA: dict[str, str] = {
     "ambition": (
@@ -128,29 +71,15 @@ NZIF_CRITERIA: dict[str, str] = {
 }
 
 # Tier-applicability mapping, transcribed from the same IIGCC NZIF 2.0 primary
-# source table as NZIF_CRITERIA above ("Criteria underpinning alignment
-# assessment"). Maps criterion_name -> list of alignment tier slugs the
-# criterion is relevant to.
+# source table as NZIF_CRITERIA (hand-transcribed 2026-06-26; both dicts need
+# manual review together if IIGCC revises the framework). Maps criterion_name
+# -> the alignment tier slugs the criterion applies to, so a reviewer never
+# checks a criterion's evidence against a tier the framework doesn't require
+# it for. Slugs are lowercased versions of the four real NZIF tier names
+# ("Committed to aligning" -> "committed_to_aligning", etc.).
 #
-# Purpose: tells a human reviewer (or downstream logic) which alignment tiers a
-# given criterion actually applies to. For example, "decarbonisation_plan" only
-# appears for "Aligned to a net zero pathway" and "Achieving net zero" in the
-# real table — so a CriterionEvidence record for it should never be checked
-# against "Committed to aligning", which the framework never requires it for.
-#
-# This is a fact about the framework, not about any individual company's
-# evidence, so it lives here as a static module-level constant alongside
-# NZIF_CRITERIA for the same reason NZIF_CRITERIA itself doesn't vary per
-# claim. Tier name slugs are lowercase-with-underscores versions of the four
-# real NZIF alignment tier names:
-#   "Committed to aligning"         -> "committed_to_aligning"
-#   "Aligning to a net zero pathway"-> "aligning_to_a_net_zero_pathway"
-#   "Aligned to a net zero pathway" -> "aligned_to_a_net_zero_pathway"
-#   "Achieving net zero"            -> "achieving_net_zero"
-#
-# DATED STARTING ASSUMPTION: transcribed by the user on 2026-06-26 from the
-# same source as NZIF_CRITERIA. If IIGCC revises the framework, both dicts need
-# manual review together.
+# Verified but not yet consumed by the runtime pipeline — the intended
+# consumer is the human-facing review layer (see ROADMAP.md and adr/0010).
 NZIF_CRITERION_TIERS: dict[str, list[str]] = {
     "ambition": [
         "committed_to_aligning",
@@ -252,7 +181,7 @@ def find_criterion_evidence(
     criterion_name: str,
     criterion_text: str,
     *,
-    llm_fn=None,
+    llm_fn: Callable[[str, str, str | None], dict] | None = None,
     max_attempts: int = 3,
 ) -> dict:
     """

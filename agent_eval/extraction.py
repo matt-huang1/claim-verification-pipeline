@@ -1,44 +1,20 @@
-"""
-extraction.py
+"""Bucket A extraction: the single point where a real model is reached.
 
-The Bucket A extraction layer: the single point in the Bucket A chain where a
-real model is reached (through the shared llm_client). Everything downstream —
-domain_check, quote_match, tag_schema, pipeline — is deterministic and testable
-with no API key; this module is the deliberately thin boundary where
-non-determinism enters.
+The flow: web-search the claim, hand the model the real candidate URLs, let it
+propose one URL plus a supporting quote, fetch that URL live, and run the
+proposal through the deterministic pipeline (verify_bucket_a_claim).
 
-The flow: run a Tavily web search on the claim, hand the model the real
-candidate URLs and snippets, let it propose one URL plus a supporting
-quote, fetch that URL's content live, and run the proposal through the
-deterministic pipeline (`verify_bucket_a_claim`) to check whether it holds.
+Four properties make this a real check rather than the model grading its own
+homework: independent ground truth (the model never sees the document or the
+allowlist); the firm no-fallback rule (empty search means no LLM call — no
+path back to proposing a URL from model memory); retry stopping by progress,
+not backoff (wrong content does not improve by waiting); and a cheap
+deterministic pre-check gate before any API spend. Every attempt is appended
+to the JSONL log with its stage_reached, so a human can audit where each
+attempt stopped rather than trust the system's own verdict.
 
-Four properties make this a real check rather than the model grading its
-own homework:
-
-- Independent ground truth. The model never sees the document text: it is
-  fetched live from the URL the model selects, not supplied by caller or
-  model. The legitimacy `allowlist` is caller-supplied and checked against
-  the model's URL independently. A hallucinated source cannot validate
-  itself.
-- No-fallback rule (firm). If search returns nothing, the LLM is not called
-  for that attempt (status "no_search_results"), and there is no path back
-  to proposing a URL from model memory — such a fallback would be a standing
-  escape hatch that reintroduces the hallucination risk search removes. It
-  counts toward the hard cap and the no-progress rule like any other attempt.
-- Retry stopping by progress, not backoff. Stop after a hard cap of 3, or
-  early when two consecutive attempts share a stage and status without the
-  quote-match score improving. The failure mode is wrong content, not an
-  overloaded API, so waiting longer cannot help.
-- Cheap pre-check gate. A deterministic check rejects claims with no numeric
-  or exclusivity token before spending any API budget. Deliberately
-  incomplete: some vague claims pass and are caught later by quote_match.
-
-Every attempt (not just the outcome) is appended to the JSONL log with its
-`stage_reached`, so a human can audit where each attempt stopped rather than
-trust the system's own verdict.
-
-Full design trail — rejected search providers, the model-choice rationale,
-and the live run that first demonstrated the failure mode — is in
+Full design trail — rejected search providers, model-choice rationale, and
+the live run that first demonstrated the failure mode — in
 adr/0006-extraction.md.
 """
 
@@ -46,14 +22,30 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Callable, Protocol, TypedDict, cast
 
 from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
-from agent_eval.page_fetch import fetch_page_text
+from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.pipeline import verify_bucket_a_claim
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import search_for_source
+from agent_eval.web_search import SearchResult, search_for_source
+
+# The three injectable seams of the Bucket A loop. Tests inject fakes with
+# these shapes; production leaves them None and gets the real implementations.
+LLMCallFn = Callable[[str, "str | None", "list[SearchResult]"], dict]
+SearchFn = Callable[[str], "list[SearchResult]"]
+FetchFn = Callable[[str], FetchResult]
+
+
+class ExtractionResult(TypedDict):
+    """extract_claim_evidence's return contract."""
+
+    claim_text: str
+    status: str
+    attempts: int
+    last_attempt_status: str | None
+
 
 # Hard ceiling on LLM calls per claim, regardless of anything else.
 MAX_ATTEMPTS = 3
@@ -237,7 +229,7 @@ def _build_fetch_feedback(failure_reason: str) -> str:
 
 
 def _default_llm_call(
-    claim_text: str, feedback: str | None, search_results: list[dict]
+    claim_text: str, feedback: str | None, search_results: list[SearchResult]
 ) -> dict:
     """
     The real LLM call. Presents real search candidates to the model and asks
@@ -274,7 +266,7 @@ def _default_llm_call(
 
 
 def default_llm_call(
-    claim_text: str, feedback: str | None, search_results: list[dict]
+    claim_text: str, feedback: str | None, search_results: list[SearchResult]
 ) -> dict:
     """
     Public wrapper around the real LLM call. Exposed so callers such as
@@ -309,12 +301,12 @@ def extract_claim_evidence(
     *,
     company_name: str,
     claim_id: str = "claim",
-    llm_fn=None,
-    search_fn=None,
-    fetch_fn=None,
+    llm_fn: LLMCallFn | None = None,
+    search_fn: SearchFn | None = None,
+    fetch_fn: FetchFn | None = None,
     log_dir: str = "logs",
     max_attempts: int = MAX_ATTEMPTS,
-) -> dict:
+) -> ExtractionResult:
     """
     Extract and verify a source URL + quote for `claim_text`.
 
@@ -467,7 +459,9 @@ def extract_claim_evidence(
 
         fetch_result = fetch_fn(url)
         if not fetch_result["success"]:
-            failure_reason = fetch_result["failure_reason"]
+            # success=False guarantees failure_reason is a str (FetchResult
+            # contract); the cast is annotation-only.
+            failure_reason = cast(str, fetch_result["failure_reason"])
             record = AttemptRecord(
                 attempt=attempt,
                 url=url,
@@ -487,13 +481,15 @@ def extract_claim_evidence(
             feedback = _build_fetch_feedback(failure_reason)
             continue
 
+        # success=True guarantees text is a str (FetchResult contract); the
+        # cast is annotation-only.
         tag = verify_bucket_a_claim(
             claim_id=claim_id,
             claim_text=claim_text,
             url=url,
             allowlist=allowlist,
             quote=quote,
-            document=fetch_result["text"],
+            document=cast(str, fetch_result["text"]),
         )
 
         score = tag.quote_evidence.top_score if tag.quote_evidence else None

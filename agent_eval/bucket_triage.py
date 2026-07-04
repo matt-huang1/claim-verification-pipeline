@@ -1,50 +1,22 @@
-"""
-bucket_triage.py
+"""Claim triage: route a claim to bucket_a, bucket_c, or bucket_d from text.
 
-Claim triage: given a claim's text alone (no document, no search, no
-fetch), decide whether the claim belongs to:
+Outputs "bucket_a" (a single authoritative source exists in principle),
+"bucket_c" (the underlying category is definitionally contested),
+"bucket_d" (future-facing/counterfactual — uncheckable in principle), or
+"ambiguous" (a stable, honest finding about the claim itself, never
+retried). Bucket B is never a triage output — identifying which external
+framework applies is a human decision, supplied as an explicit bucket="B"
+to run_pipeline.py.
 
-  - "bucket_a"   — a single authoritative source exists in principle
-                   (the underlying category is precisely bounded)
-  - "bucket_c"   — no single authoritative source exists
-                   (the underlying category is definitionally contested)
-  - "bucket_d"   — the claim is future-facing or counterfactual, so no
-                   fact-check is possible even in principle
-  - "ambiguous"  — the model cannot confidently classify it;
-                   this is a stable, honest finding about the claim itself,
-                   not a transient miss, and is never retried
-
-Bucket B is never a triage output — identifying which external framework
-applies to a company is a human decision, supplied as an explicit
-bucket="B" to run_pipeline.py, not something derivable from claim text.
-
-WHY THIS IS NOT A KEYWORD/REGEX CHECK:
-
-"TSMC's revenue was $69.3 billion in FY2023" looks like it might be Bucket C
-(a specific number invites definitional scrutiny), but is actually Bucket A:
-there is one real, knowable answer from TSMC's own published financial
-statements with no definitional contest possible.
-
-Conversely, "TSMC has roughly 60% of the foundry market" has no comparative
-keyword at all, yet is genuinely Bucket C: "the foundry market" has no single
-agreed boundary (does it include IDMs' in-house fab capacity or not?).
-
-The real distinguishing test is whether the claim's underlying category is
-precisely bounded (Bucket A), definitionally contested (Bucket C), or
-uncheckable in principle (Bucket D) — not anything detectable from surface
-wording, which can mislead in every direction. This requires real judgment,
-not pattern matching.
-
-WHY "AMBIGUOUS" IS NEVER RETRIED:
-
-Genuine classification uncertainty here is a stable, honest finding about the
-claim itself — the same character as quote_match.py's "ambiguous" status,
-which is presented as-is, not looped on. A claim that gets "ambiguous" is
-handed to a human exactly as that: a real, final finding that the system could
-not confidently route it, not a failure to fix by trying again.
+This is an LLM call, not a keyword check: the distinguishing test is whether
+the claim's underlying category is precisely bounded, not anything detectable
+from surface wording — which misleads in every direction (the worked
+counterexamples live in the system prompt below and in
+adr/0013-designing-bucket-c.md).
 """
 
 import json
+from typing import Callable
 
 from agent_eval.llm_client import default_complete_json
 
@@ -124,7 +96,7 @@ def _default_llm_call(claim_text: str) -> dict:
     return json.loads(default_complete_json(_SYSTEM_PROMPT, f"Claim: {claim_text}"))
 
 
-def triage_claim(claim_text: str, llm_fn=None) -> dict:
+def triage_claim(claim_text: str, llm_fn: Callable[[str], dict] | None = None) -> dict:
     """
     Classify a claim into bucket_a, bucket_c, bucket_d, ambiguous, or
     malformed_llm_response.

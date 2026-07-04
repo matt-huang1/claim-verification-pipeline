@@ -19,7 +19,9 @@ Each COMPANY_CLAIMS entry contains:
         each with "claim_text" and "notes"
 """
 
-COMPANY_CLAIMS = {
+from typing import Any
+
+COMPANY_CLAIMS: dict[str, dict[str, Any]] = {
     "tsmc": {
         "allowlist": ["tsmc.com", "pr.tsmc.com", "sustainability.tsmc.com"],
         "bucket_a_claims": [

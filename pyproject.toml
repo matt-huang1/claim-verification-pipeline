@@ -31,6 +31,11 @@ dev = [
 [tool.setuptools]
 packages = ["agent_eval"]
 
+[tool.setuptools.package-data]
+# py.typed marks the package as typed (PEP 561) so consumers' type checkers
+# pick up the annotations.
+agent_eval = ["py.typed"]
+
 [tool.black]
 line-length = 88
 
@@ -44,4 +49,8 @@ python_version = "3.10"
 # Third-party packages (rapidfuzz, openai, tavily, dotenv, pypdf) ship no type
 # stubs; ignore their missing imports rather than vendoring stubs we don't own.
 ignore_missing_imports = true
-files = ["agent_eval"]
+# Every function must be annotated and every body is checked — the same
+# philosophy as the typed evidence dataclasses, enforced by tooling.
+disallow_untyped_defs = true
+check_untyped_defs = true
+files = ["agent_eval", "scripts"]

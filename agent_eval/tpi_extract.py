@@ -1,96 +1,30 @@
-"""
-tpi_extract.py
+"""Deterministic TPI Management Quality parser (raw HTML, no LLM).
 
-Extracts TPI (Transition Pathway Initiative) Management Quality assessment
-data from a company's TPI profile page by parsing the raw HTML.
+Extracts a company's TPI Management Quality data from its TPI profile page.
+Fetches raw HTML directly rather than using page_fetch.py because the
+indicator pass/fail state is encoded exclusively in CSS class attributes
+("mq-answer mq-answer--yes levelN"), which plain-text extraction destroys.
 
-WHY RAW HTML, NOT page_fetch.py:
+Confirmed page structure (2026-06-28, TotalEnergies — confirmed for exactly
+one company's page, not assumed universal):
 
-page_fetch.py converts HTML to plain text — it strips all tags and their
-attributes. The Management Quality indicator pass/fail state is encoded
-exclusively in CSS class attributes on <div> elements
-("mq-answer mq-answer--yes levelN" or "mq-answer mq-answer--no levelN").
-Plain-text extraction destroys this information entirely before any parser
-can read it. This module fetches raw HTML with requests directly and builds
-a dedicated HTMLParser subclass that reads only the class attributes, leaving
-everything else aside.
+- 23 indicator divs in document order, class "mq-answer mq-answer--{yes|no|
+  not-applicable} levelN". Cross-checked against an independent analyst
+  document (TotalEnergies fails indicators 21 and 22 only) — exact match.
+- A RemoteDropdown React component whose HTML-entity-encoded
+  data-react-props JSON carries the historical assessment list ("data") and
+  the company's numeric ID (in "url": "/companies/1216/mq_assessment").
+- A second endpoint, /companies/{id}/assessments_levels_chart_data
+  ?mq_assessment_id={any valid id}, returns the full historical Level
+  series as JSON.
 
-CONFIRMED PAGE STRUCTURE (as of 2026-06-28, TotalEnergies):
-
-Each of the 23 Management Quality indicators is rendered as a div with class:
-
-    "mq-answer mq-answer--yes levelN"            (indicator passed)
-    "mq-answer mq-answer--no levelN"             (indicator failed)
-    "mq-answer mq-answer--not-applicable levelN" (not applicable at
-                                                   this level)
-
-where N is an integer (0–5) representing the TPI level the indicator belongs
-to. The divs appear in document order, matching indicator numbers 1 through 23.
-Cross-checked against an independent asset-manager analyst document that
-independently stated TotalEnergies fails indicators 21 and 22 only — the HTML
-parse matched exactly.
-
-The same page also contains a RemoteDropdown React component encoded as a
-<div data-react-class="RemoteDropdown" data-react-props="..."> element. The
-data-react-props attribute is an HTML-entity-encoded JSON object of the form:
-
-    {"name": "mq_assessment_id", "remote": true,
-     "url": "/companies/1216/mq_assessment",
-     "data": [{"label": "15 December 2025", "value": 13671}, ...]}
-
-The "data" list is the full historical assessment record — one entry per
-past assessment date (in "DD Month YYYY" format). The "url" field contains
-the company's numeric ID.
-
-THIS STRUCTURE IS CONFIRMED FOR EXACTLY ONE COMPANY'S PAGE (TotalEnergies).
-It is not assumed universal. A different company's page may have a different
-number of applicable indicators, or TPI may change their page template. The
-function treats any unexpected indicator count or class value as an honest
-failure rather than silently guessing — the same discipline applied in
-page_fetch.py for unexpected content types and in extraction.py for malformed
-LLM responses.
-
-HISTORICAL TREND DATA — SECOND ENDPOINT (confirmed 2026-06-28):
-
-    https://www.transitionpathwayinitiative.org/companies/{company_id}/
-        assessments_levels_chart_data?mq_assessment_id={id}
-
-Returns JSON:
-
-    [
-      {"name": "Level", "data": [["01/07/2017", 3], ["01/07/2018", 4], ...]},
-      {"name": "Current Level", "data": [[...]]},
-      {"name": "Max Level", "data": 5}
-    ]
-
-The company_id is extracted from the RemoteDropdown "url" field (already
-present in the first fetch's HTML — no additional caller-supplied parameter
-needed). Any valid mq_assessment_id from the dropdown options list is
-sufficient to retrieve the full historical Level series.
-
-HONEST FAILURE DESIGN — TWO-PHASE, FAIL PRECISELY:
-
-The function makes two HTTP requests. If the second (historical) fetch fails,
-the indicator results from the first fetch are not discarded. The same
-principle as page_fetch.py: fail at the granularity of the specific thing
-that failed, not the whole operation.
-
-  Main fetch failure reasons (success=False):
-    "fetch_failed"                — network error, timeout, or non-200/non-404
-    "company_not_in_tpi_universe" — HTTP 404; the company is not present in
-                                    TPI's assessment universe at all (e.g.
-                                    privately held companies with no public
-                                    market capitalisation, confirmed for
-                                    Patagonia). This is a stable, meaningful
-                                    fact, not a transient failure to retry —
-                                    distinct from "fetch_failed", which covers
-                                    genuine network/timeout/server problems.
-    "unexpected_indicator_count"  — parsed count != 23
-    "unexpected_indicator_value"  — a class value other than yes/no/
-                                    not-applicable found
-
-  Historical fetch failure (success=True, historical_levels=None):
-    "historical_fetch_failed"     — non-200, network error, or JSON parse error
+Honest failure design — two-phase, fail precisely: a failed historical
+fetch never discards the indicator results from the main fetch. An
+unexpected indicator count or class value is a distinct named failure, never
+a confidently-wrong partial parse. A 404 is "company_not_in_tpi_universe"
+(a stable, meaningful fact — confirmed for Patagonia), distinct from a
+transient "fetch_failed". Full design trail, including the two bugs only
+the live run found, in adr/0011-tpi-extract.md.
 """
 
 import html as _html_stdlib
@@ -99,6 +33,8 @@ import re
 from html.parser import HTMLParser
 
 import requests
+
+from agent_eval.tag_schema import ClaimTag, TPIManagementQualityEvidence
 
 _TPI_BASE_URL = "https://www.transitionpathwayinitiative.org/companies/"
 _CHART_DATA_PATH = "assessments_levels_chart_data"
@@ -182,7 +118,7 @@ class _MQParser(HTMLParser):
     _LEVEL_TEXT_RE = re.compile(r"Current\s+level[:\s]+(\d+)", re.IGNORECASE)
     _COMPANY_ID_RE = re.compile(r"/companies/(\d+)/")
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.indicators: list[str] = []
         self.values_ok: bool = True
@@ -218,17 +154,18 @@ class _MQParser(HTMLParser):
         except Exception:
             pass  # silently ignore; dropdown absence does not abort indicator parse
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "div":
             return
         attrs_dict = dict(attrs)
 
         # RemoteDropdown carries the historical assessment list and company ID.
+        # HTMLParser reports valueless attributes as None; treat as absent.
         if attrs_dict.get("data-react-class") == "RemoteDropdown":
-            self._parse_dropdown_props(attrs_dict.get("data-react-props", ""))
+            self._parse_dropdown_props(attrs_dict.get("data-react-props") or "")
             return
 
-        cls = attrs_dict.get("class", "")
+        cls = attrs_dict.get("class") or ""
         if not self._MQ_ANSWER_RE.search(cls):
             return
         m = self._RESULT_RE.search(cls)
@@ -239,7 +176,7 @@ class _MQParser(HTMLParser):
             # or "--not-applicable" — an unrecognised indicator value
             self.values_ok = False
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         self._text_parts.append(data)
 
     def finish(self) -> None:
@@ -465,8 +402,6 @@ def build_tpi_evidence(company_slug: str) -> dict:
     result a caller can act on, e.g. to record that Patagonia is outside
     TPI's assessment universe by design).
     """
-    from agent_eval.tag_schema import TPIManagementQualityEvidence
-
     raw = extract_tpi_management_quality(company_slug)
 
     if not raw["success"]:
@@ -488,7 +423,9 @@ def build_tpi_evidence(company_slug: str) -> dict:
     return {"success": True, "evidence": evidence, "failure_reason": None}
 
 
-def build_tpi_claim_tag(claim_id: str, company_slug: str, evidence):
+def build_tpi_claim_tag(
+    claim_id: str, company_slug: str, evidence: TPIManagementQualityEvidence
+) -> ClaimTag:
     """
     Pure assembly: wrap a TPIManagementQualityEvidence in a ClaimTag.
     No fetching; mirrors pipeline.py's build_bucket_a_tag pattern.
@@ -499,8 +436,6 @@ def build_tpi_claim_tag(claim_id: str, company_slug: str, evidence):
     Returns:
         ClaimTag with bucket="B" and tpi_evidence set.
     """
-    from agent_eval.tag_schema import ClaimTag
-
     return ClaimTag(
         claim_id=claim_id,
         claim_text=f"{company_slug} TPI Management Quality assessment",

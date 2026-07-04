@@ -1,111 +1,49 @@
-"""
-page_fetch.py
+"""URL -> plain text fetch with size caps and named failure reasons.
 
-Retrieves the text content of a URL for use as the `document` argument to
-match_quote() and the existing pipeline. This is the fetch step that slots
-in between domain_check passing (confirming a URL is legitimate) and
-quote_match running (checking whether a quote appears in the fetched text).
+The fetch step between domain_check passing and quote_match running. Extracts
+plain text from HTML pages and clean, digitally-created PDFs only — no table
+extraction, no OCR, no scanned-document handling (deferred until Bucket C
+grows a consumer for table data; the swap would be isolated to _pdf_to_text).
 
-SCOPE LIMIT — plain text extraction only:
+Size handling: responses with a Content-Length header are checked against a
+type-specific cap before download; responses without one (chunked transfer
+encoding — a real TSMC press release surfaced this) are streamed with a
+running cumulative cap. A partial document is never parsed: either the full
+stream completes or the whole attempt is refused as "too_large".
 
-This module extracts text from HTML pages and from clean, digitally-created
-PDFs (PDFs with real selectable text, not scanned images). It deliberately
-does NOT handle:
+No retry logic lives here — this module reports honestly what happened to
+exactly one URL, and extraction.py's loop decides what to do about it.
 
-  - Table extraction (reading tabular data as structured rows/columns)
-  - OCR (reading text from scanned or image-based PDFs)
-  - Scanned document handling of any kind
-
-These limitations are stated here, not buried, for the same reason
-quote_match.py documents its numeric-gate scope limit: so that a future
-maintainer extending this module to handle Bucket C work (which will need
-table data, e.g. for market-share breakdowns) knows exactly where the
-current boundary is and why it is there. Table extraction for Bucket C is
-a real, distinct future need — it is deferred because quote_match's fuzzy
-text matching cannot use table structure anyway, so adding it now would be
-pure complexity with no current benefit. pdfplumber is the natural library
-to reach for when that work happens; the swap would be isolated entirely to
-_pdf_to_text() in this module.
-
-DEPENDENCY CHOICES:
-
-  requests over httpx: this pipeline is synchronous and single-URL-at-a-time
-  by design. There is no current need for async or parallel fetching. httpx
-  is a clean future swap if that changes — the HTTP call is isolated to this
-  module, not woven through the architecture — but it is not justified now.
-
-  pypdf over PyMuPDF: PyMuPDF (fitz) extracts text more reliably from complex
-  PDFs but is licensed AGPL v3, which has copyleft implications this project
-  wants to avoid. pypdf is MIT-licensed and sufficient for clean, digitally-
-  created documents.
-
-SIZE-CHECK DESIGN — streaming cap for responses without Content-Length:
-
-The original design checked the Content-Length header before downloading and
-refused immediately if it was missing ("size_unknown") or too large
-("too_large"). A live test against TSMC's actual press release URL
-(https://pr.tsmc.com/english/news/3067) surfaced a real gap: the server uses
-chunked transfer encoding (common for dynamically-generated pages, e.g.
-Drupal), which legitimately cannot send Content-Length in advance, by design,
-not by misconfiguration. The 184 KB page was correctly refused as "size_unknown"
-— a real, small, legitimate document wrongly rejected.
-
-The fix streams the response body in chunks (response.iter_content), tracking
-a running cumulative byte count. If the count crosses the type-specific cap
-before the stream completes, the download is aborted and "too_large" is
-returned — the same outcome as the pre-download Content-Length check, just
-detected during streaming for the no-Content-Length case. If the stream
-completes under the cap, the full, complete, parseable document is assembled
-and returned — identical to the Content-Length-present-and-valid success path
-in every way.
-
-This is NOT the mid-download truncation approach considered and rejected in
-the original design. That approach cut off at an arbitrary byte count and
-attempted to parse whatever partial bytes resulted — a truncated PDF is
-invalid, truncated HTML may be mid-tag, and there is no way to know in
-advance which you'll get. This fix never parses a partial document: either
-the full stream completes (success) or the cap is crossed and the entire
-attempt is refused (failure). The original protection against genuinely
-oversized responses is fully preserved.
-
-For responses WITH a Content-Length header: the fast-path pre-download check
-is kept unchanged. If Content-Length is present and already exceeds the cap,
-there is no reason to begin streaming at all.
-
-"size_unknown" AS A FAILURE REASON IS NOW UNREACHABLE:
-
-After this fix, no code path in this module returns "size_unknown". Previously
-it fired for: (a) absent Content-Length, and (b) an unparseable Content-Length
-value (e.g. "Content-Length: abc"). Case (a) is now handled by streaming.
-Case (b) is treated the same way (stream with cap), rather than refusing
-outright for what is a malformed-but-harmless header from a mostly-functional
-server. "size_unknown" is removed from the failure_reason vocabulary below
-rather than left as dead code.
-
-NO RETRY LOGIC:
-
-This function reports honestly what happened for a single URL. It does not
-retry, fall back to alternative URLs, or compensate for transient failures.
-That responsibility belongs entirely to extraction.py's existing retry loop,
-which already knows how to react to a specific failure_reason with targeted
-feedback on the next attempt. Keeping this module narrowly honest — rather
-than making it a second retry mechanism — is the same principle behind
-pipeline.py's split into separate check and assembly functions: units that
-do one thing stay independently testable and composable.
+Dependency choices (requests over httpx, MIT-licensed pypdf over AGPL
+PyMuPDF) and the chunked-encoding bug that reshaped the size check are
+recorded in adr/0007-page-fetch.md.
 """
 
 import io
 from html.parser import HTMLParser
+from typing import TypedDict
 
 import requests
 from pypdf import PdfReader
 
+
+class FetchResult(TypedDict):
+    """The result contract every fetch consumer depends on.
+
+    success=True guarantees text is a str; on failure text is None and
+    failure_reason names the specific failure (see fetch_page_text).
+    """
+
+    success: bool
+    text: str | None
+    content_type: str | None
+    failure_reason: str | None
+
+
 # Size caps applied during streaming (no Content-Length) or before download
 # (Content-Length present). Starting assumptions based on TSMC press releases
 # (~50-200 KB) and annual/sustainability reports (several MB as PDFs).
-# Revisit if real documents routinely exceed these. See module docstring,
-# "SIZE-CHECK DESIGN", for the reasoning behind streaming rather than
-# truncating mid-download.
+# Revisit if real documents routinely exceed these.
 HTML_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 PDF_MAX_BYTES = 20 * 1024 * 1024  # 20 MB
 
@@ -119,20 +57,20 @@ class _TextExtractor(HTMLParser):
     other tags and collects visible text. Whitespace-normalized on output.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._parts: list[str] = []
         self._skip_depth: int = 0
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() in ("script", "style"):
             self._skip_depth += 1
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag.lower() in ("script", "style") and self._skip_depth > 0:
             self._skip_depth -= 1
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if self._skip_depth == 0:
             stripped = data.strip()
             if stripped:
@@ -169,7 +107,7 @@ def _classify_content_type(content_type_header: str | None) -> str:
     return "other"
 
 
-def fetch_page_text(url: str, timeout: int = 10) -> dict:
+def fetch_page_text(url: str, timeout: int = 10) -> FetchResult:
     """
     Retrieve the text content of `url`.
 
@@ -207,13 +145,9 @@ def fetch_page_text(url: str, timeout: int = 10) -> dict:
                                      after headers arrived but before full body)
         "parse_error"              — body downloaded but extraction failed
                                      (malformed PDF, decode failure, etc.)
-
-    Note: "size_unknown" was removed as a failure reason. Responses without
-    a Content-Length header are now handled via streaming with a cumulative
-    cap (see module docstring, "SIZE-CHECK DESIGN").
     """
 
-    def _fail(reason: str, content_type: str | None = None) -> dict:
+    def _fail(reason: str, content_type: str | None = None) -> FetchResult:
         return {
             "success": False,
             "text": None,

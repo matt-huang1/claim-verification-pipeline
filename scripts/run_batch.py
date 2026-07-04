@@ -14,6 +14,7 @@ import json
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from agent_eval.ground_truth import COMPANY_CLAIMS
 from agent_eval.run_pipeline import run_pipeline
@@ -25,7 +26,7 @@ _OUTPUT = _ROOT / "data" / "results.json"
 
 # ─── curated claim set ────────────────────────────────────────────────────────
 
-_CLAIMS = [
+_CLAIMS: list[dict[str, Any]] = [
     {
         "label": "TSMC — RE100 commitment (Bucket A)",
         "company": "TSMC",
@@ -127,6 +128,7 @@ _CLAIMS = [
 
 def _run_one(entry: dict) -> dict:
     """Run one entry and return a result dict with label and company fields."""
+    result: dict
     if entry["kind"] == "tpi":
         tpi_result = fetch_and_tag_tpi_evidence(entry["claim_id"], entry["slug"])
         if tpi_result["success"]:
@@ -145,7 +147,7 @@ def _run_one(entry: dict) -> dict:
                 "tag": None,
             }
     else:
-        result = run_pipeline(**entry["kwargs"])
+        result = dict(run_pipeline(**entry["kwargs"]))
 
     serialised = result_to_dict(result)
     serialised["label"] = entry["label"]

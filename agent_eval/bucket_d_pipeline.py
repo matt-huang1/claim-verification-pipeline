@@ -1,37 +1,16 @@
+"""Bucket D orchestrator: analyze_assumptions wrapped in a ClaimTag.
+
+Routing to Bucket D happens upstream (an explicit bucket="D" or the
+dispatcher's triage), so there is no triage step here. The return type is
+ClaimTag directly, not a dict: analyze_assumptions always returns a
+well-formed AssumptionsStatedEvidence (never None, never raises), so there
+is exactly one outcome shape — matching bucket_b_pipeline.py, unlike
+bucket_c_pipeline.py whose own triage produces several. No logging here;
+analyze_assumptions already writes the Bucket D log entry.
+Design context: adr/0019-bucket-d-analysis-and-pipeline.md.
 """
-bucket_d_pipeline.py
 
-Orchestrator for Bucket D: given a future-facing or counterfactual claim
-text, calls analyze_assumptions and wraps the result in a ClaimTag.
-
-WHY THERE IS NO TRIAGE STEP:
-
-Routing to Bucket D happens upstream of this module — either the caller
-identifies the claim as Bucket D and supplies bucket="D" to run_pipeline.py,
-or run_pipeline.py's own triage step classifies it as bucket_d and routes
-it here. Re-running triage inside this pipeline would duplicate the
-dispatcher's job and could produce a contradictory routing.
-
-WHY THE RETURN TYPE IS ClaimTag DIRECTLY, NOT A DICT:
-
-No triage means no routing failure paths. bucket_c_pipeline.py returns a
-dict because its own triage step can produce several distinct outcomes,
-only one of which is a real ClaimTag. Here there is one outcome: analyze_assumptions always
-returns a well-formed AssumptionsStatedEvidence (never None, never raises),
-so wrapping that in a ClaimTag and returning it directly is the natural,
-unambiguous shape. This matches bucket_b_pipeline.py, which also returns
-ClaimTag directly because its success/failure modes are all internal to
-the pipeline rather than routing decisions that change the return shape.
-
-WHY NO ORCHESTRATOR-LEVEL LOGGING:
-
-analyze_assumptions already writes the Bucket D log entry — one entry per
-call, covering claim_text, company_name, assumptions_found,
-causal_steps_found, stated counts, attempts, and outcome. Adding a second
-orchestrator-level entry would duplicate that information without adding
-anything, the same reasoning as bucket_c_pipeline.py (where
-reconcile_sources already covers the full Bucket C outcome).
-"""
+from typing import Callable
 
 from agent_eval.bucket_d_analysis import analyze_assumptions
 from agent_eval.tag_schema import ClaimTag
@@ -42,7 +21,7 @@ def run_bucket_d_pipeline(
     *,
     company_name: str,
     claim_id: str,
-    llm_fn=None,
+    llm_fn: Callable[[str, str | None], dict] | None = None,
     log_dir: str = "logs",
 ) -> ClaimTag:
     """

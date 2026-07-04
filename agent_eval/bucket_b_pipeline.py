@@ -1,79 +1,32 @@
-"""
-bucket_b_pipeline.py
+"""Bucket B orchestrator: per-criterion search -> select -> fetch -> verify.
 
-Orchestrator for Bucket B: given a company name and a list of NZIF criteria
-to check, runs the full search → URL selection → fetch → evidence extraction
-chain for each criterion and assembles the results into a ClaimTag with
-bucket="B".
+Given a company name and a list of NZIF criteria, runs the full chain for
+each criterion independently and assembles the results into a ClaimTag with
+bucket="B". Key decisions (full reasoning in adr/0015-bucket-b-pipeline.md):
 
-DESIGN DECISIONS:
-
-WHY company_name IS AN EXPLICIT PARAMETER, NOT INFERRED:
-
-The company name is the anchor for every search query built here. If it were
-inferred from the allowlist, the claim_text, or anywhere else, a misparse
-would silently contaminate every search query built from it — producing
-results for the wrong company without any visible failure. Requiring the
-caller to supply it explicitly means the only way the company name can be
-wrong is if the caller supplies the wrong one, which is visible at the call
-site.
-
-WHY ONE CRITERION'S FAILURE DOES NOT ABORT THE OTHERS:
-
-Each criterion runs a fully independent chain. A search returning no results
-for "disclosure" does not mean "ambition" will also return nothing — they are
-different queries, different URLs, potentially different documents. Stopping
-the whole run on the first failure would mean that a single temporarily
-unavailable page or an obscure criterion with low search coverage would
-prevent all other evidence from being gathered. Each criterion either produces
-a CriterionEvidence record or is silently omitted; the final ClaimTag contains
-whatever was found. This mirrors the independence already proven in
-criterion_evidence.py's own tests.
-
-WHY THE CACHE IS SCOPED TO ONE CALL, NOT GLOBAL:
-
-The in-memory fetch cache exists only for the duration of one
-run_bucket_b_pipeline() call. It is NOT persisted across calls, NOT stored as
-a module-level variable, and NOT shared across different companies or runs.
-Two reasons:
-
-1. Staleness: a page fetched for a previous call may have changed. A global
-   cache with no TTL would silently serve stale content to subsequent calls
-   without any indication of age.
-
-2. Company isolation: different companies can use the same CDN or filing
-   domain (e.g. multiple companies filing to the same PDF host). Reusing a
-   fetched document across companies would silently cross-contaminate evidence.
-
-The cache's only job is to avoid redundant fetches WITHIN one call — a case
-that is common (multiple criteria may share the same source document, e.g.
-a sustainability report page) and entirely safe to deduplicate within a single
-run.
-
-WHY CriterionEvidence RECORDS ARE OMITTED (NOT PLACEHOLDED) FOR FAILED CRITERIA:
-
-A failed criterion has no evidence_text, no evidence_source_url, and no
-evidence_source_type. A placeholder record would require inventing values for
-those fields or making them Optional — either breaks the existing CriterionEvidence
-contract, which requires all five fields. Omitting the record is strictly
-correct: criteria_evidence contains only real evidence. The overall_status
-then correctly becomes "incomplete" if no criteria at all succeeded, and
-"criteria_evidence_gathered" if any did, which is exactly the distinction
-tag_schema already defines.
+- company_name is an explicit parameter, never inferred — a misparse would
+  silently contaminate every search query with no visible failure.
+- One criterion's failure never aborts the others; a failed criterion is
+  omitted (never placeholded — CriterionEvidence requires all five fields to
+  be real), and overall_status falls out of tag_schema's existing logic.
+- The fetch cache is scoped to one call, never global: a global cache would
+  serve stale content with no age signal and could cross-contaminate
+  evidence between companies sharing a filing host or CDN.
 """
 
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Callable, cast
 
 from agent_eval.criterion_evidence import NZIF_CRITERIA, find_criterion_evidence
 from agent_eval.domain_check import check_domain
 from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
-from agent_eval.page_fetch import fetch_page_text
+from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.tag_schema import ClaimTag, CriterionEvidence
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import search_for_source
+from agent_eval.web_search import SearchResult, search_for_source
 
 _ALL_CRITERIA = list(NZIF_CRITERIA.keys())
 
@@ -124,7 +77,7 @@ def _default_url_selection_llm_call(
     company_name: str,
     criterion_name: str,
     criterion_text: str,
-    search_results: list[dict],
+    search_results: list[SearchResult],
 ) -> dict:
     """
     Select the best candidate URL from search results for a given criterion.
@@ -160,10 +113,10 @@ def run_bucket_b_pipeline(
     allowlist: list[str],
     criteria: list[str] | None = None,
     *,
-    search_fn=None,
-    url_llm_fn=None,
-    fetch_fn=None,
-    criterion_evidence_fn=None,
+    search_fn: Callable[[str], list[SearchResult]] | None = None,
+    url_llm_fn: Callable[[str, str, str, list[SearchResult]], dict] | None = None,
+    fetch_fn: Callable[[str], FetchResult] | None = None,
+    criterion_evidence_fn: Callable[..., dict] | None = None,
     log_dir: str = "logs",
 ) -> ClaimTag:
     """
@@ -171,21 +124,11 @@ def run_bucket_b_pipeline(
 
     For each criterion in `criteria` (defaults to all six NZIF criteria):
       1. Build a search query from company_name + the first clause of
-         criterion_text (text before the first "."). The original query used
-         company_name + criterion_name (e.g. "TSMC ambition"), which returned
-         zero Tavily results across every criterion tested in the first live run
-         — confirmed directly via raw Tavily API calls with the same parameters
-         web_search.py uses, ruling out a bug in web_search.py or Tavily itself.
-         Three alternatives were tested live before this one was chosen:
-           - Full criterion_text: worked for "ambition" (5 results) but risks
-             dilution on longer, more technical criteria text.
-           - Hand-written per-criterion phrases: worked but requires manual
-             tuning per criterion and does not scale.
-           - First clause of criterion_text (split on "."): returned 5 results
-             for all six real NZIF criteria in live Tavily calls, no exceptions.
-             Chosen because it is a generic, mechanical transformation — no
-             per-criterion hand-tuning, generalises automatically to any future
-             criterion added to NZIF_CRITERIA.
+         criterion_text (text before the first "."). This transformation was
+         chosen over a bare criterion name and two other alternatives after
+         live testing against all six criteria — the bare name returned zero
+         results for every criterion in the first live run
+         (adr/0015-bucket-b-pipeline.md).
       2. Run a web search for candidate URLs.
       3. Call an LLM to select the best candidate URL for this criterion.
       4. Verify the selected URL came from the search results (url_compare).
@@ -313,7 +256,9 @@ def run_bucket_b_pipeline(
                     log_dir,
                 )
                 continue
-            document = fetch_result["text"]
+            # success=True guarantees text is a str (FetchResult contract);
+            # the cast is annotation-only.
+            document = cast(str, fetch_result["text"])
             fetch_cache[url] = document
 
         # --- criterion evidence extraction ---

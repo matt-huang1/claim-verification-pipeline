@@ -1,57 +1,47 @@
+"""Top-level dispatcher: triage a claim and route it to the right pipeline.
+
+Always returns the same four-field dict (outcome, bucket, triage_reasoning,
+tag) regardless of which pipeline ran or whether triage failed, so every
+consumer handles exactly one shape.
+
+Key decisions (full reasoning in adr/0020-run-pipeline.md):
+
+- Bucket B never comes from triage — identifying which external framework
+  applies is a human decision, supplied as an explicit bucket="B".
+- Triage is skipped when a bucket is explicitly supplied: an explicit bucket
+  is a human routing decision that overrides the model's judgment, and
+  skipping guarantees triage_llm_fn is never called in that case.
+- Bucket A's ClaimTag is built via capturing closures around llm_fn and
+  fetch_fn: on a "verified" return the captured url/quote/document are
+  guaranteed to belong to the successful attempt, because
+  extract_claim_evidence returns immediately on first success.
 """
-run_pipeline.py
 
-Top-level dispatcher that routes a claim through triage and into the
-correct bucket pipeline, returning a consistent dict shape regardless of
-which bucket ran.
-
-WHY BUCKET B NEVER COMES FROM TRIAGE:
-    Triage distinguishes three structural categories: claims with a single
-    authoritative source (Bucket A), claims whose underlying category is
-    definitionally contested (Bucket C), and claims that are uncheckable
-    in principle (Bucket D). Bucket B covers a company's alignment with a
-    specific framework (NZIF), which requires a human to identify which
-    framework applies and which criteria to check — triage has no basis
-    for making that determination from claim text alone. Bucket B always
-    requires explicit bucket="B" from the caller.
-
-HOW BUCKET A'S CLAIMTAG IS BUILT:
-    extract_claim_evidence's return dict contains {"claim_text", "status",
-    "attempts", "last_attempt_status"} — no url, quote, or ClaimTag. To
-    build a ClaimTag on a "verified" outcome, the dispatcher wraps both
-    the llm_fn and fetch_fn passed to extract_claim_evidence with capturing
-    closures that record the last url/quote proposed by the LLM and the
-    last successfully fetched document. On a "verified" return, these three
-    values are guaranteed to belong to the successful attempt because
-    extract_claim_evidence returns immediately on first success. The
-    captured values are passed to verify_bucket_a_claim to build a real
-    ClaimTag. No log reading required.
-
-WHY TRIAGE IS SKIPPED WHEN BUCKET IS EXPLICITLY SUPPLIED:
-    An explicit bucket is a human-supplied routing decision that overrides
-    the model's judgment. Calling triage anyway would be wasted cost and
-    could produce a contradictory routing that the dispatcher would then
-    have to ignore. Skipping triage when the answer is already known is
-    also the only way to guarantee that triage_llm_fn is never called in
-    tests that supply bucket= explicitly.
-
-WHY THE RETURN SHAPE IS ALWAYS A DICT WITH THE SAME FOUR FIELDS:
-    The front-end contract must handle exactly one shape regardless of
-    which bucket ran or whether triage failed. One dict with four named
-    fields — outcome, bucket, triage_reasoning, tag — lets every consumer
-    check result["outcome"] and result["tag"] without knowing or caring
-    which pipeline produced the result.
-"""
+from typing import Callable, TypedDict
 
 from agent_eval.bucket_b_pipeline import run_bucket_b_pipeline
 from agent_eval.bucket_c_pipeline import run_bucket_c_pipeline
 from agent_eval.bucket_d_pipeline import run_bucket_d_pipeline
 from agent_eval.bucket_triage import triage_claim
+from agent_eval.extraction import FetchFn, LLMCallFn, SearchFn
 from agent_eval.extraction import default_llm_call as _extraction_default_llm_call
 from agent_eval.extraction import extract_claim_evidence
+from agent_eval.page_fetch import FetchResult
 from agent_eval.pipeline import verify_bucket_a_claim
+from agent_eval.tag_schema import ClaimTag
+from agent_eval.web_search import SearchResult
 
 _VALID_BUCKETS = {"A", "B", "C", "D"}
+
+
+class PipelineResult(TypedDict):
+    """The dispatcher's four-field return contract — one shape for every
+    consumer, regardless of which pipeline ran or whether triage failed."""
+
+    outcome: str
+    bucket: str | None
+    triage_reasoning: str | None
+    tag: ClaimTag | None
 
 
 def run_pipeline(
@@ -63,21 +53,25 @@ def run_pipeline(
     bucket: str | None = None,
     criteria: list[str] | None = None,
     log_dir: str = "logs",
-    triage_llm_fn=None,
-    extraction_llm_fn=None,
-    extraction_search_fn=None,
-    extraction_fetch_fn=None,
-    bucket_b_search_fn=None,
-    bucket_b_url_llm_fn=None,
-    bucket_b_fetch_fn=None,
-    bucket_b_criterion_evidence_fn=None,
-    bucket_c_search_fn=None,
-    bucket_c_url_llm_fn=None,
-    bucket_c_fetch_fn=None,
-    bucket_c_finding_llm_fn=None,
-    bucket_c_reconciliation_llm_fn=None,
-    bucket_d_llm_fn=None,
-) -> dict:
+    triage_llm_fn: Callable[[str], dict] | None = None,
+    extraction_llm_fn: LLMCallFn | None = None,
+    extraction_search_fn: SearchFn | None = None,
+    extraction_fetch_fn: FetchFn | None = None,
+    bucket_b_search_fn: SearchFn | None = None,
+    bucket_b_url_llm_fn: (
+        Callable[[str, str, str, list[SearchResult]], dict] | None
+    ) = None,
+    bucket_b_fetch_fn: FetchFn | None = None,
+    bucket_b_criterion_evidence_fn: Callable[..., dict] | None = None,
+    bucket_c_search_fn: SearchFn | None = None,
+    bucket_c_url_llm_fn: Callable[[str, list[SearchResult]], dict] | None = None,
+    bucket_c_fetch_fn: FetchFn | None = None,
+    bucket_c_finding_llm_fn: Callable[[str, str], dict] | None = None,
+    bucket_c_reconciliation_llm_fn: (
+        Callable[[str, list[dict], str | None], dict] | None
+    ) = None,
+    bucket_d_llm_fn: Callable[[str, str | None], dict] | None = None,
+) -> PipelineResult:
     """
     Route a claim through triage and into the correct bucket pipeline.
 
@@ -175,16 +169,16 @@ def run_pipeline(
         # When explicitly routed to C, override triage inside bucket_c_pipeline
         # so it never re-classifies the claim. When triage ran at dispatcher
         # level, pass the real fn so test fakes propagate correctly.
+        _c_triage_fn = triage_llm_fn
         if bucket == "C":
 
-            def _c_triage_fn(_claim):
+            def _explicit_c_triage(_claim: str) -> dict:
                 return {
                     "classification": "bucket_c",
                     "reasoning": "explicitly routed by caller",
                 }
 
-        else:
-            _c_triage_fn = triage_llm_fn
+            _c_triage_fn = _explicit_c_triage
 
         c_result = run_bucket_c_pipeline(
             claim_text=claim_text,
@@ -227,15 +221,15 @@ def run_pipeline(
 
 
 def _run_bucket_a(
-    claim_text,
-    allowlist,
-    company_name,
-    claim_id,
-    extraction_llm_fn,
-    extraction_search_fn,
-    extraction_fetch_fn,
-    log_dir,
-):
+    claim_text: str,
+    allowlist: list[str],
+    company_name: str,
+    claim_id: str,
+    extraction_llm_fn: LLMCallFn | None,
+    extraction_search_fn: SearchFn | None,
+    extraction_fetch_fn: FetchFn | None,
+    log_dir: str,
+) -> ClaimTag | None:
     """
     Run Bucket A extraction. Returns a ClaimTag on success, None otherwise.
 
@@ -246,20 +240,20 @@ def _run_bucket_a(
     """
     from agent_eval.page_fetch import fetch_page_text
 
-    _captured: dict = {"url": "", "quote": "", "document": ""}
+    _captured: dict[str, str] = {"url": "", "quote": "", "document": ""}
 
-    def _cap_llm(ct, fb, sr):
+    def _cap_llm(ct: str, fb: str | None, sr: list[SearchResult]) -> dict:
         fn = extraction_llm_fn or _extraction_default_llm_call
         result = fn(ct, fb, sr)
         _captured["url"] = result.get("url", "")
         _captured["quote"] = result.get("quote", "")
         return result
 
-    def _cap_fetch(url):
+    def _cap_fetch(url: str) -> FetchResult:
         fn = extraction_fetch_fn or fetch_page_text
         result = fn(url)
         if result.get("success"):
-            _captured["document"] = result.get("text", "")
+            _captured["document"] = result.get("text") or ""
         return result
 
     a_result = extract_claim_evidence(

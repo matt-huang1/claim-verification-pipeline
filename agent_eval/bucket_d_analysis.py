@@ -1,55 +1,24 @@
-"""
-bucket_d_analysis.py
+"""Bucket D analysis: surface a claim's assumptions and causal steps.
 
-Bucket D analysis: given a future-facing or counterfactual claim text,
-call the LLM once to surface a structured partial reading of the claim's
-reasoning — what assumptions and causal steps are explicitly present, and
-what is missing or unstated.
+One LLM call per claim (the claim text is the entire input — no search, no
+fetch) producing a structured partial reading: which assumptions and causal
+steps are explicitly present, and which are missing. NO VERDICT is reached
+here; a human reviewer reads the output alongside the original claim.
 
-NO VERDICT IS REACHED HERE. This module collects what the LLM can see;
-a human reviewer reads the structured output alongside the original claim
-and decides whether the claim is honest enough to include in a report.
+Key decisions (full reasoning in adr/0019-bucket-d-analysis-and-pipeline.md):
 
-DESIGN DECISIONS:
-
-WHY ONE LLM CALL PER analyze_assumptions INVOCATION:
-
-Bucket D has no network fetch, no search, no URL selection. The entire
-input to the model is the claim text itself. One call extracts both
-assumptions and causal steps in a single structured response — splitting
-into two calls would require the model to read the same claim twice and
-would produce no additional signal.
-
-WHY BOTH EMPTY LISTS ARE A VALID, NON-ERROR RESULT:
-
-A claim so thinly written that the LLM cannot identify any explicit
-assumption or causal step is a real, honest finding. The resulting
-overall_status ("assumptions_not_stated") correctly reports what was
-found. Empty lists are not the same as a malformed response — the
-distinction is whether the response is structurally valid (parseable,
-correctly shaped) versus whether it contains content.
-
-WHY THE RETRY LOGIC IS MALFORMED-ONLY:
-
-A well-formed response where every present_in_claim=False is a genuine
-judgment outcome — the claim's text really does not state those things.
-It is never retried. This mirrors reconciliation.py's "all unresolved"
-path: a globally valid but informationally empty result is still final.
-Retrying would only waste a call on a result that the model will likely
-reproduce identically.
-
-WHY "failed" RETURNS AssumptionsStatedEvidence WITH EMPTY LISTS:
-
-The caller always gets a typed AssumptionsStatedEvidence, never None.
-This is the same principle as reconcile_sources: a processing failure
-is surfaced in the notes field and the result still has a valid shape,
-so the caller's code path is identical regardless of outcome. Checking
-for None at the call site would force every caller to handle a shape
-the type system says will never exist.
+- Both lists empty is a valid, non-error result — a claim so thin the model
+  finds nothing is a real finding, honestly reported as
+  "assumptions_not_stated", distinct from a malformed response.
+- Retry is malformed-only, cap of 2: a well-formed all-False response is a
+  genuine judgment the model would likely reproduce; retrying wastes a call.
+- Failure still returns a typed AssumptionsStatedEvidence (empty lists,
+  notes set), never None — callers have one code path regardless of outcome.
 """
 
 import json
 from datetime import datetime, timezone
+from typing import Callable
 
 from agent_eval.llm_client import default_complete_json
 from agent_eval.log_utils import append_log_entry
@@ -209,7 +178,7 @@ def analyze_assumptions(
     claim_text: str,
     *,
     company_name: str,
-    llm_fn=None,
+    llm_fn: Callable[[str, str | None], dict] | None = None,
     log_dir: str = "logs",
 ) -> AssumptionsStatedEvidence:
     """
