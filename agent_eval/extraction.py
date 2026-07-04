@@ -29,7 +29,7 @@ from agent_eval.log_utils import append_log_entry
 from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.pipeline import verify_bucket_a_claim
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import SearchResult, search_for_source
+from agent_eval.web_search import SearchResult, SearchUnavailable, search_for_source
 
 # The three injectable seams of the Bucket A loop. Tests inject fakes with
 # these shapes; production leaves them None and gets the real implementations.
@@ -91,9 +91,9 @@ class AttemptRecord:
     status: str
     top_score: float | None
     # How far this attempt got through the pipeline before stopping.
-    # Possible values: "no_search_results", "malformed_llm_response",
-    # "url_not_from_search_results", "fetch_failed",
-    # "verification_completed".
+    # Possible values: "search_unavailable", "no_search_results",
+    # "malformed_llm_response", "url_not_from_search_results",
+    # "fetch_failed", "verification_completed".
     stage_reached: str
     timestamp: str
     company_name: str = ""
@@ -348,6 +348,14 @@ def extract_claim_evidence(
                                        stop) without reaching "verified".
                                        A distinct, named state - NOT folded
                                        into any single-attempt failure status.
+        "search_unavailable"        - the search layer could not run at all
+                                       (missing key, auth/quota/network
+                                       failure). A configuration/infrastructure
+                                       failure, named so it can never
+                                       masquerade as "this claim has no
+                                       sources" (adr/0026). The loop stops
+                                       immediately: retrying the same claim
+                                       cannot fix the infrastructure.
 
     last_attempt_status is the literal status string of the last attempt
     (e.g. "ambiguous", "numeric_mismatch", "no_search_results"), or None if
@@ -372,7 +380,30 @@ def extract_claim_evidence(
     feedback: str | None = None
 
     for attempt in range(1, max_attempts + 1):
-        search_results = search_fn(claim_text)
+        try:
+            search_results = search_fn(claim_text)
+        except SearchUnavailable:
+            # The search layer could not run at all. This is a property of
+            # the infrastructure, not the claim, so no retry loop applies —
+            # log the named state and stop.
+            record = AttemptRecord(
+                attempt=attempt,
+                url="",
+                quote="",
+                status="search_unavailable",
+                stage_reached="search_unavailable",
+                top_score=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                company_name=company_name,
+            )
+            _log_attempt(record, claim_text, log_dir)
+            history.append(record)
+            return {
+                "claim_text": claim_text,
+                "status": "search_unavailable",
+                "attempts": len(history),
+                "last_attempt_status": "search_unavailable",
+            }
 
         if not search_results:
             # No LLM call when search returns nothing. This is a firm rule:

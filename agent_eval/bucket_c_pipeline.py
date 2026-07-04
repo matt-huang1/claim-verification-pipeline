@@ -16,7 +16,7 @@ from agent_eval.page_fetch import FetchResult
 from agent_eval.reconciliation import reconcile_sources
 from agent_eval.source_extraction import gather_source_findings
 from agent_eval.tag_schema import ClaimTag
-from agent_eval.web_search import SearchResult
+from agent_eval.web_search import SearchResult, SearchUnavailable
 
 
 def run_bucket_c_pipeline(
@@ -48,7 +48,7 @@ def run_bucket_c_pipeline(
     Steps 2-4 run only when triage returns "bucket_c". Any other triage
     result returns immediately without calling gather or reconcile.
 
-    Returns a dict with five possible shapes:
+    Returns a dict with six possible shapes:
 
         {"outcome": "routed_to_bucket_a",
          "triage_reasoning": str,
@@ -65,6 +65,13 @@ def run_bucket_c_pipeline(
         {"outcome": "triage_failed",
          "triage_reasoning": None,
          "tag": None}
+
+        {"outcome": "search_unavailable",
+         "triage_reasoning": str,
+         "tag": None}
+        (the search layer could not run at all and no findings were
+         gathered — a configuration/infrastructure failure, named so it
+         can never look like an honest "no consensus" result; adr/0026)
 
         {"outcome": "completed",
          "triage_reasoning": str,
@@ -129,14 +136,21 @@ def run_bucket_c_pipeline(
     # classification == "bucket_c" — continue
 
     # --- Step 2: gather source findings ---
-    findings = gather_source_findings(
-        claim_text=claim_text,
-        allowlist=allowlist,
-        search_fn=search_fn,
-        url_llm_fn=url_llm_fn,
-        fetch_fn=fetch_fn,
-        finding_llm_fn=finding_llm_fn,
-    )
+    try:
+        findings = gather_source_findings(
+            claim_text=claim_text,
+            allowlist=allowlist,
+            search_fn=search_fn,
+            url_llm_fn=url_llm_fn,
+            fetch_fn=fetch_fn,
+            finding_llm_fn=finding_llm_fn,
+        )
+    except SearchUnavailable:
+        return {
+            "outcome": "search_unavailable",
+            "triage_reasoning": reasoning,
+            "tag": None,
+        }
 
     # --- Step 3: reconcile ---
     evidence = reconcile_sources(

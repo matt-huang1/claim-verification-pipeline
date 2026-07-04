@@ -31,6 +31,7 @@ from agent_eval.extraction import (
     no_meaningful_progress,
 )
 from agent_eval.quote_match import MINIMUM_QUOTE_LENGTH_CHARS
+from agent_eval.web_search import SearchUnavailable
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -377,6 +378,60 @@ def test_loop_logs_no_search_results_attempts(tmp_path):
     log_file = tmp_path / "evaluation_log.jsonl"
     lines = [line for line in log_file.read_text().splitlines() if line.strip()]
     assert len(lines) == 2  # two no_search_results attempts before early stop
+
+
+def test_search_unavailable_is_a_named_terminal_status(tmp_path):
+    """
+    When the search layer cannot run at all (SearchUnavailable), the loop
+    stops immediately with the named status "search_unavailable" — never
+    "unverifiable_after_retries", which would let a configuration error
+    masquerade as an honest verification result (adr/0026). The LLM must
+    not be called, and no retry happens: the failure is a property of the
+    infrastructure, not the claim.
+    """
+
+    def unavailable_search(query):
+        raise SearchUnavailable("TAVILY_API_KEY is not set")
+
+    def exploding_llm(claim_text, feedback, search_results):
+        raise AssertionError("LLM must not be called when search is unavailable")
+
+    result = extract_claim_evidence(
+        "TSMC moved its renewable target to 2040",
+        allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
+        llm_fn=exploding_llm,
+        search_fn=unavailable_search,
+        log_dir=str(tmp_path),
+    )
+    assert result["status"] == "search_unavailable"
+    assert result["attempts"] == 1  # no retry — retrying cannot fix the config
+    assert result["last_attempt_status"] == "search_unavailable"
+
+
+def test_search_unavailable_attempt_is_logged(tmp_path):
+    """The named infrastructure failure is written to the log like any
+    other attempt, with stage_reached carrying the specific state."""
+
+    def unavailable_search(query):
+        raise SearchUnavailable("quota exhausted")
+
+    extract_claim_evidence(
+        "TSMC moved its renewable target to 2040",
+        allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
+        llm_fn=lambda c, f, s: (_ for _ in ()).throw(
+            AssertionError("must not reach LLM")
+        ),
+        search_fn=unavailable_search,
+        log_dir=str(tmp_path),
+    )
+    log_file = tmp_path / "evaluation_log.jsonl"
+    lines = [line for line in log_file.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["status"] == "search_unavailable"
+    assert entry["stage_reached"] == "search_unavailable"
 
 
 def test_loop_passes_search_results_to_llm(tmp_path):

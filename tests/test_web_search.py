@@ -8,9 +8,12 @@ What is tested:
     with "url", "title", and "snippet" keys.
   - Tavily's "content" field is mapped to our "snippet" key.
   - The max_results cap is enforced client-side if the API returns more.
-  - A network-level exception returns an empty list rather than raising.
-  - A missing TAVILY_API_KEY returns an empty list without making any call.
-  - A malformed/missing "results" key returns an empty list rather than raising.
+  - Infrastructure failures raise SearchUnavailable, never return an empty
+    list: a missing TAVILY_API_KEY (without constructing a client) and any
+    client/API exception. An empty list is reserved for a search that ran
+    and genuinely found nothing (adr/0026-search-unavailability.md).
+  - A response missing the "results" key returns an empty list — the API
+    responded, there just were no results to read.
   - client.search() is ALWAYS called with search_depth="basic" and
     include_raw_content=False, explicitly — enforcement of the SERP-only
     constraint documented in web_search.py's module docstring.
@@ -20,7 +23,9 @@ import os
 
 from unittest.mock import MagicMock, patch
 
-from agent_eval.web_search import search_for_source
+import pytest
+
+from agent_eval.web_search import SearchUnavailable, search_for_source
 
 _TAVILY_RESULTS = [
     {
@@ -82,42 +87,50 @@ def test_max_results_cap_is_enforced():
     assert len(results) == 2
 
 
-# --- failure cases all return empty list ---
+# --- infrastructure failures raise SearchUnavailable ---
 
 
-def test_network_exception_returns_empty_list():
+def test_network_exception_raises_search_unavailable():
+    """An API/client failure is an infrastructure failure, not "no results"."""
     mock_client = MagicMock()
     mock_client.search.side_effect = Exception("connection failed")
     with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            results = search_for_source("TSMC")
-    assert results == []
+            with pytest.raises(SearchUnavailable):
+                search_for_source("TSMC")
 
 
-def test_missing_api_key_returns_empty_list_without_calling_api():
-    """No client should be constructed when TAVILY_API_KEY is absent."""
+def test_missing_api_key_raises_search_unavailable_without_calling_api():
+    """No client should be constructed when TAVILY_API_KEY is absent, and the
+    failure must be named — a missing key returning [] would let a config
+    error masquerade as an honest "no sources for this claim" outcome."""
     env = {k: v for k, v in os.environ.items() if k != "TAVILY_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with patch("agent_eval.web_search.TavilyClient") as mock_cls:
-            results = search_for_source("TSMC")
-    assert results == []
+            with pytest.raises(SearchUnavailable):
+                search_for_source("TSMC")
     mock_cls.assert_not_called()
 
 
-def test_missing_results_key_returns_empty_list():
-    """An unexpected response schema (no 'results' key) must not raise."""
-    mock_client = MagicMock()
-    mock_client.search.return_value = {"query": "TSMC"}  # no 'results' key
-    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
-        with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            results = search_for_source("TSMC")
-    assert results == []
-
-
-def test_malformed_response_returns_empty_list():
-    """A non-dict response (e.g. API client raises) must return empty, not raise."""
+def test_client_valueerror_raises_search_unavailable():
+    """Any exception from the client is wrapped, preserving the cause."""
     mock_client = MagicMock()
     mock_client.search.side_effect = ValueError("unexpected response format")
+    with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
+        with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
+            with pytest.raises(SearchUnavailable) as exc_info:
+                search_for_source("TSMC")
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+# --- a response that arrived but holds nothing is an empty list ---
+
+
+def test_missing_results_key_returns_empty_list():
+    """A response with no 'results' key means the API answered with nothing
+    to read — a genuine empty result set, not unavailability."""
+    mock_client = MagicMock()
+    mock_client.search.return_value = {"query": "TSMC"}  # no 'results' key
     with patch("agent_eval.web_search.TavilyClient", return_value=mock_client):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
             results = search_for_source("TSMC")

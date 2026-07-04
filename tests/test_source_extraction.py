@@ -13,6 +13,7 @@ import pytest
 
 from agent_eval.source_extraction import find_source_finding, gather_source_findings
 from agent_eval.tag_schema import SourceFinding
+from agent_eval.web_search import SearchUnavailable
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -434,6 +435,55 @@ def test_failed_iterations_do_not_count_toward_target():
         finding_llm_fn=_both_found_fn,
     )
     assert len(results) == 2
+
+
+def test_search_unavailable_with_no_findings_propagates():
+    """
+    If the search layer cannot run at all before any finding was gathered,
+    the named failure propagates (adr/0026) — an empty findings list would
+    flow into reconciliation and produce a tag that looks like an honest
+    "no consensus" outcome for what is actually a configuration error.
+    """
+
+    def unavailable_search(query):
+        raise SearchUnavailable("TAVILY_API_KEY is not set")
+
+    with pytest.raises(SearchUnavailable):
+        gather_source_findings(
+            claim_text="TSMC has roughly 60% of the foundry market",
+            allowlist=["tsmc.com"],
+            target_source_count=2,
+            search_fn=unavailable_search,
+            url_llm_fn=_make_url_llm_fn(),
+            fetch_fn=_make_fetch_fn(),
+            finding_llm_fn=_both_found_fn,
+        )
+
+
+def test_search_unavailable_after_findings_returns_partial():
+    """
+    Findings gathered before search became unavailable are real data — the
+    loop stops and returns them rather than discarding verified content.
+    """
+    calls = {"n": 0}
+
+    def search_then_unavailable(query):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FAKE_SEARCH_RESULTS
+        raise SearchUnavailable("quota exhausted")
+
+    results = gather_source_findings(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        allowlist=["tsmc.com"],
+        target_source_count=3,
+        search_fn=search_then_unavailable,
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        finding_llm_fn=_both_found_fn,
+    )
+    assert len(results) == 1
+    assert calls["n"] == 2  # stopped at the failure, no further attempts
 
 
 def test_hard_cap_stops_loop_when_every_iteration_fails():

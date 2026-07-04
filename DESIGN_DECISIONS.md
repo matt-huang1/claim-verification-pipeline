@@ -35,3 +35,5 @@ Each record follows the ADR structure - **Context**, **Decision**, **Consequence
 | 0023 | [Re-validating the post-redirect URL](adr/0023-redirect-revalidation.md) | Content is checked against where it actually came from |
 | 0024 | [Scoring the triage router](adr/0024-triage-accuracy-eval.md) | A scored spot-check of the one LLM judgment in front of the verifier |
 | 0025 | [Property-based tests](adr/0025-property-based-testing.md) | The invariants asserted for every input, not just curated examples |
+| 0026 | [Search unavailability](adr/0026-search-unavailability.md) | A configuration error must never look like an honest verification outcome |
+| 0027 | [The dispatcher triages exactly once](adr/0027-dispatcher-triages-once.md) | Duplicate triage cost removed; contradictory routing made unreachable |

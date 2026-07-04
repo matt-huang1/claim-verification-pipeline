@@ -17,6 +17,7 @@ import pytest
 
 from agent_eval.run_pipeline import run_pipeline
 from agent_eval.tag_schema import ClaimTag
+from agent_eval.web_search import SearchUnavailable
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -401,6 +402,91 @@ def test_invalid_bucket_returns_invalid_bucket_outcome():
     assert result["bucket"] is None
     assert result["tag"] is None
     assert result["triage_reasoning"] is None
+
+
+# ---------------------------------------------------------------------------
+# Triage runs exactly once (adr/0027)
+# ---------------------------------------------------------------------------
+
+
+def test_triage_routed_bucket_c_never_re_triages():
+    """
+    When the dispatcher's own triage routes to Bucket C, the C pipeline must
+    not triage the same claim a second time — a duplicate nondeterministic
+    call that could contradict the routing already made (adr/0027).
+    """
+    triage_called = {"n": 0}
+
+    def counting_triage(claim_text):
+        triage_called["n"] += 1
+        return {"classification": "bucket_c", "reasoning": "contested category"}
+
+    result = run_pipeline(
+        _CLAIM_C,
+        _ALLOWLIST,
+        company_name=_COMPANY,
+        claim_id=_CLAIM_ID,
+        triage_llm_fn=counting_triage,
+        bucket_c_search_fn=_search_fn([]),
+        bucket_c_reconciliation_llm_fn=_c_reconciliation_fn_no_group(),
+    )
+    assert triage_called["n"] == 1
+    assert result["bucket"] == "C"
+    assert result["triage_reasoning"] == "contested category"
+
+
+# ---------------------------------------------------------------------------
+# Search unavailability passes through as a named outcome (adr/0026)
+# ---------------------------------------------------------------------------
+
+
+def _unavailable_search(query):
+    raise SearchUnavailable("TAVILY_API_KEY is not set")
+
+
+def test_bucket_a_search_unavailable_outcome(tmp_path):
+    result = run_pipeline(
+        _CLAIM_A,
+        _ALLOWLIST,
+        company_name=_COMPANY,
+        claim_id=_CLAIM_ID,
+        bucket="A",
+        extraction_search_fn=_unavailable_search,
+        log_dir=str(tmp_path),
+    )
+    assert result["outcome"] == "search_unavailable"
+    assert result["bucket"] == "A"
+    assert result["tag"] is None
+
+
+def test_bucket_b_search_unavailable_outcome(tmp_path):
+    result = run_pipeline(
+        _CLAIM_A,
+        _ALLOWLIST,
+        company_name=_COMPANY,
+        claim_id=_CLAIM_ID,
+        bucket="B",
+        bucket_b_search_fn=_unavailable_search,
+        log_dir=str(tmp_path),
+    )
+    assert result["outcome"] == "search_unavailable"
+    assert result["bucket"] == "B"
+    assert result["tag"] is None
+
+
+def test_bucket_c_search_unavailable_outcome(tmp_path):
+    result = run_pipeline(
+        _CLAIM_C,
+        _ALLOWLIST,
+        company_name=_COMPANY,
+        claim_id=_CLAIM_ID,
+        bucket="C",
+        bucket_c_search_fn=_unavailable_search,
+        log_dir=str(tmp_path),
+    )
+    assert result["outcome"] == "search_unavailable"
+    assert result["bucket"] == "C"
+    assert result["tag"] is None
 
 
 # ---------------------------------------------------------------------------

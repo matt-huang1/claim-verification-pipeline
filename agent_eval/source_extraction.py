@@ -30,7 +30,7 @@ from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.quote_match import match_quote
 from agent_eval.tag_schema import SourceFinding
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import SearchResult, search_for_source
+from agent_eval.web_search import SearchResult, SearchUnavailable, search_for_source
 
 # Total attempt cap = target_source_count * this multiplier. Stops the loop
 # when a claim genuinely has few findable sources, without bounding target_count
@@ -235,6 +235,11 @@ def gather_source_findings(
     total attempts. If the cap is reached before the target, whatever real
     findings were gathered are returned (possibly an empty list).
 
+    Raises SearchUnavailable if the search layer could not run at all AND
+    no findings had been gathered yet; if some findings already exist when
+    search becomes unavailable, they are returned as a legitimate partial
+    result. See adr/0026-search-unavailability.md.
+
     The in-call fetch cache avoids wasting a slot on a URL that search returns
     twice. It is scoped to one call only — never global, never persisted across
     calls. See bucket_b_pipeline.py's module docstring for the full reasoning
@@ -277,7 +282,17 @@ def gather_source_findings(
         total_attempts += 1
 
         # --- search ---
-        search_results = _search_fn(claim_text)
+        try:
+            search_results = _search_fn(claim_text)
+        except SearchUnavailable:
+            # Unavailability is a property of the infrastructure, not the
+            # claim. Findings already gathered are real — keep them and stop.
+            # With nothing gathered, re-raise so the caller reports a named
+            # infrastructure failure instead of an evidence tag that looks
+            # like an honest "no consensus" outcome (adr/0026).
+            if findings:
+                break
+            raise
         if not search_results:
             continue
 

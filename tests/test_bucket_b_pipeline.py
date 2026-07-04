@@ -22,6 +22,7 @@ from agent_eval.bucket_b_pipeline import run_bucket_b_pipeline
 from agent_eval.criterion_evidence import NZIF_CRITERIA
 from agent_eval.log_utils import LOG_FILENAME
 from agent_eval.quote_match import MINIMUM_QUOTE_LENGTH_CHARS
+from agent_eval.web_search import SearchUnavailable
 
 TSMC_ALLOWLIST = ["tsmc.com", "pr.tsmc.com"]
 
@@ -725,3 +726,69 @@ def test_source_type_unchanged_when_fake_omits_final_url(tmp_path):
 
     assert tag.criteria_evidence is not None
     assert tag.criteria_evidence[0].evidence_source_type == "official"
+
+
+# ---------------------------------------------------------------------------
+# Search unavailability (adr/0026)
+# ---------------------------------------------------------------------------
+
+
+def test_search_unavailable_with_nothing_gathered_raises(tmp_path):
+    """
+    If the search layer cannot run at all and no criterion has produced
+    evidence, the named failure propagates — returning an "incomplete" tag
+    would let a configuration error look like an honest no-evidence outcome.
+    """
+
+    def unavailable_search(query):
+        raise SearchUnavailable("TAVILY_API_KEY is not set")
+
+    with pytest.raises(SearchUnavailable):
+        run_bucket_b_pipeline(
+            company_name="TSMC",
+            claim_id="tsmc-b-unavailable",
+            allowlist=TSMC_ALLOWLIST,
+            search_fn=unavailable_search,
+            url_llm_fn=_make_url_llm_fn(),
+            fetch_fn=_make_fetch_fn(),
+            criterion_evidence_fn=_make_criterion_evidence_fn(),
+            log_dir=str(tmp_path),
+        )
+
+    # The failure is still logged, once — not once per remaining criterion.
+    log_file = tmp_path / LOG_FILENAME
+    lines = [line for line in log_file.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["stage_reached"] == "search_unavailable"
+
+
+def test_search_unavailable_after_real_evidence_keeps_partial_tag(tmp_path):
+    """
+    Evidence gathered before search became unavailable is real and is kept:
+    the pipeline stops early and returns the partial tag rather than
+    discarding verified excerpts or logging six copies of one failure.
+    """
+    calls = {"n": 0}
+
+    def search_then_unavailable(query):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [{"url": FAKE_URL, "title": "TSMC", "snippet": query}]
+        raise SearchUnavailable("quota exhausted")
+
+    tag = run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-partial",
+        allowlist=TSMC_ALLOWLIST,
+        search_fn=search_then_unavailable,
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+
+    assert tag.overall_status == "criteria_evidence_gathered"
+    assert tag.criteria_evidence is not None
+    assert len(tag.criteria_evidence) == 1
+    assert calls["n"] == 2  # stopped at the failure, no third search

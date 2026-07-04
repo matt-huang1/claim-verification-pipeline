@@ -26,7 +26,7 @@ from agent_eval.log_utils import append_log_entry
 from agent_eval.page_fetch import FetchResult, fetch_page_text
 from agent_eval.tag_schema import ClaimTag, CriterionEvidence
 from agent_eval.url_compare import same_url
-from agent_eval.web_search import SearchResult, search_for_source
+from agent_eval.web_search import SearchResult, SearchUnavailable, search_for_source
 
 _ALL_CRITERIA = list(NZIF_CRITERIA.keys())
 
@@ -41,7 +41,8 @@ class BucketBAttemptRecord:
     the search-query bug found in the first live run of this module).
 
     stage_reached values:
-      "no_search_results"          — search returned nothing
+      "search_unavailable"         — the search layer could not run at all
+      "no_search_results"          — search ran and returned nothing
       "url_not_from_search_results"— LLM proposed a URL not in search results
       "fetch_failed"               — page fetch failed
       "excerpt_not_verified"       — find_criterion_evidence returned
@@ -163,6 +164,13 @@ def run_bucket_b_pipeline(
     one CriterionEvidence per criterion that succeeded. overall_status is
     "criteria_evidence_gathered" if any evidence was found, "incomplete" if
     none was (computed by tag_schema, not here).
+
+    Raises SearchUnavailable if the search layer could not run at all AND no
+    evidence had been gathered yet — a configuration/infrastructure failure
+    must not be reported as an "incomplete" tag, which would look like an
+    honest no-evidence outcome. If some criteria already produced real
+    evidence before search became unavailable, that partial tag is returned
+    (the failure is still logged per criterion). See adr/0026.
     """
     if criteria is None:
         criteria = _ALL_CRITERIA
@@ -189,7 +197,31 @@ def run_bucket_b_pipeline(
         _ts = datetime.now(timezone.utc).isoformat()
 
         # --- search ---
-        search_results = _search_fn(query)
+        try:
+            search_results = _search_fn(query)
+        except SearchUnavailable:
+            # Unavailability is a property of the search infrastructure, not
+            # of this criterion — the remaining criteria would fail the same
+            # way, so stop rather than log six copies of one failure. Evidence
+            # already gathered is kept (it is real); if nothing was gathered,
+            # re-raise so the caller sees a named infrastructure failure
+            # rather than an "incomplete" tag that looks like an honest
+            # no-evidence outcome (adr/0026-search-unavailability.md).
+            _log_criterion_attempt(
+                BucketBAttemptRecord(
+                    company_name=company_name,
+                    criterion_name=criterion_name,
+                    stage_reached="search_unavailable",
+                    status="search_unavailable",
+                    url="",
+                    timestamp=_ts,
+                ),
+                log_dir,
+            )
+            if gathered:
+                break
+            raise
+
         if not search_results:
             _log_criterion_attempt(
                 BucketBAttemptRecord(

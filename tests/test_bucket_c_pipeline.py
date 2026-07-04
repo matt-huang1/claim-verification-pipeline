@@ -16,6 +16,7 @@ import pytest
 
 from agent_eval.bucket_c_pipeline import run_bucket_c_pipeline
 from agent_eval.tag_schema import ClaimTag, SourcePluralityEvidence
+from agent_eval.web_search import SearchUnavailable
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -489,6 +490,34 @@ def test_all_fakes_are_called():
 
     for name, count in call_counts.items():
         assert count >= 1, f"fake '{name}' was never called"
+
+
+def test_search_unavailable_returns_named_outcome():
+    """
+    When the search layer cannot run at all and no findings were gathered,
+    the pipeline returns the named "search_unavailable" outcome with no tag
+    (adr/0026) — never a "definitional_ambiguity_unresolved" tag, which would
+    let a configuration error look like an honest no-consensus result.
+    """
+
+    def unavailable_search(query):
+        raise SearchUnavailable("TAVILY_API_KEY is not set")
+
+    result = run_bucket_c_pipeline(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        allowlist=["tsmc.com"],
+        company_name="TSMC",
+        claim_id="tsmc-c-unavailable",
+        triage_llm_fn=_make_triage_fn("bucket_c", "definitionally contested"),
+        search_fn=unavailable_search,
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        finding_llm_fn=_make_finding_llm_fn(),
+        reconciliation_llm_fn=_make_reconciliation_fn(),
+    )
+    assert result["outcome"] == "search_unavailable"
+    assert result["tag"] is None
+    assert result["triage_reasoning"] == "definitionally contested"
 
 
 def test_gather_not_called_when_triage_routes_away():
