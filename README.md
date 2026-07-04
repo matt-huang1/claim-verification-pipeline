@@ -1,13 +1,11 @@
-# Agent Evaluation Framework
+# Claim Verification Pipeline
 
-[![CI](https://github.com/matt-huang1/agent-evaluation-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/matt-huang1/agent-evaluation-framework/actions/workflows/ci.yml)
+[![CI](https://github.com/matt-huang1/claim-verification-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/matt-huang1/claim-verification-pipeline/actions/workflows/ci.yml)
 [![Coverage ≥ 90% (CI-enforced)](https://img.shields.io/badge/coverage-%E2%89%A590%25_CI--enforced-brightgreen.svg)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
 
-A verification layer for AI-assisted climate transition research at an asset manager. Its job is to catch errors before they reach client documents — specifically, cases where a model produces plausible-sounding claims not grounded in primary sources.
-
-Despite the repository name, this is not a harness for benchmarking LLM agents. It verifies the *claims* an AI-assisted research workflow produces: every URL, quote, and figure a model proposes is checked deterministically against independently fetched primary sources before anything is called verified.
+A verification layer for AI-assisted climate transition research at an asset manager. Its job is to catch errors before they reach client documents — specifically, cases where a model produces plausible-sounding claims not grounded in primary sources. Every URL, quote, and figure a model proposes is checked deterministically against independently fetched primary sources before anything is called verified.
 
 > **Independent project.** This is a personal portfolio project, built and maintained solely by me. It is not affiliated with, endorsed by, or produced on behalf of any employer or client. "An asset manager" refers generically to the professional context that motivated the work; no client is named, and the repository contains no confidential, proprietary, or otherwise non-public information. Every claim and data point is verified against publicly available primary sources — company disclosures and the public [NZIF](https://www.iigcc.org/hubfs/2023%20resources%20updates/NZIF%202.0.pdf) and [TPI](https://www.transitionpathwayinitiative.org/) frameworks.
 
@@ -38,7 +36,7 @@ The system never decides whether a claim is "good enough." That judgment belongs
 
 ## Live demo
 
-**[Browse the verified results →](https://matt-huang1.github.io/agent-evaluation-framework/)** (GitHub Pages — the bundled sample dataset, a real committed pipeline run against live sources)
+**[Browse the verified results →](https://matt-huang1.github.io/claim-verification-pipeline/)** (GitHub Pages — the bundled sample dataset, a real committed pipeline run against live sources)
 
 ![The results browser showing pre-computed verification outcomes](docs/results-browser.png)
 
