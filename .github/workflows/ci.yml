@@ -26,7 +26,9 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run tests (excluding live_api) with coverage
-        run: pytest -m "not live_api" --cov=agent_eval --cov-report=term-missing
+        run: >-
+          pytest -m "not live_api" --cov=agent_eval
+          --cov-report=term-missing --cov-fail-under=90
 
       - name: Adversarial self-evaluation of the verifier
         run: python scripts/adversarial_eval.py
@@ -39,3 +41,21 @@ jobs:
 
       - name: Type-check with mypy
         run: mypy
+
+  # Internal documentation links (including anchors) must resolve. The docs
+  # cross-reference the ADRs heavily, and a reference that no longer points at
+  # its evidence is treated the same way as a failing check: a red build.
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check internal documentation links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --offline
+            --include-fragments
+            --no-progress
+            "**/*.md"
+          fail: true
