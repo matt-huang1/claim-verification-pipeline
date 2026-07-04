@@ -1,0 +1,22 @@
+# Pinned versions for reproducible CI builds (pip's -c constraints mechanism).
+#
+# pyproject.toml keeps deliberately loose lower bounds so consumers of the
+# package are not over-constrained; CI installs against these pins so a new
+# upstream release cannot silently change what a build tests. Dependabot
+# proposes updates to this file, so pins move by reviewed PR, not by surprise.
+#
+# Direct runtime dependencies
+openai==2.43.0
+pypdf==6.14.2
+python-dotenv==1.2.2
+rapidfuzz==3.14.5
+requests==2.34.2
+tavily-python==0.7.26
+
+# Dev/CI tooling (the [dev] extra)
+black==26.5.1
+flake8==7.3.0
+hypothesis==6.156.1
+mypy==2.1.0
+pytest==9.1.1
+pytest-cov==7.1.0

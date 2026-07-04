@@ -1,0 +1,14 @@
+# Weekly dependency-update PRs. Python pins live in constraints.txt (CI's
+# reproducible install); pyproject.toml keeps loose lower bounds for
+# consumers. GitHub Actions versions are kept current the same way.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
