@@ -14,8 +14,15 @@ before concluding anything. See adr/0024-triage-accuracy-eval.md.
 
 import sys
 import textwrap
+from pathlib import Path
 
-from agent_eval.triage_eval import run_suite, summarise
+# Scripts live one level below the repo root, so `python scripts/<name>.py`
+# from a fresh clone does not put agent_eval/ on sys.path. Adding the root
+# makes the scripts runnable without the editable install (dependencies are
+# still required — see README).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from agent_eval.triage_eval import run_suite, summarise  # noqa: E402
 
 
 def main() -> int:

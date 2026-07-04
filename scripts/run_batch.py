@@ -11,15 +11,22 @@ data/results.json with the latest results.
 """
 
 import json
+import sys
 import time
 import traceback
 from pathlib import Path
 from typing import Any
 
-from agent_eval.ground_truth import COMPANY_CLAIMS
-from agent_eval.run_pipeline import run_pipeline
-from agent_eval.serialisation import result_to_dict
-from agent_eval.tpi_extract import fetch_and_tag_tpi_evidence
+# Scripts live one level below the repo root, so `python scripts/<name>.py`
+# from a fresh clone does not put agent_eval/ on sys.path. Adding the root
+# makes the scripts runnable without the editable install (dependencies are
+# still required — see README).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from agent_eval.ground_truth import COMPANY_CLAIMS  # noqa: E402
+from agent_eval.run_pipeline import run_pipeline  # noqa: E402
+from agent_eval.serialisation import result_to_dict  # noqa: E402
+from agent_eval.tpi_extract import fetch_and_tag_tpi_evidence  # noqa: E402
 
 _ROOT = Path(__file__).parent.parent
 _OUTPUT = _ROOT / "data" / "results.json"
