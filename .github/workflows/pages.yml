@@ -1,0 +1,46 @@
+# Deploys the results browser (index.html + the bundled sample results) to
+# GitHub Pages, so the demo is clickable without cloning the repo. The page
+# fetches data/results.json first and falls back to data/sample_results.json
+# — on Pages only the committed sample exists, which is exactly the bundled
+# real pipeline run described in the README.
+#
+# One-time setup: in the repository settings, set Pages "Source" to
+# "GitHub Actions".
+name: Deploy results browser to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/data _site/docs
+          cp index.html _site/
+          cp data/sample_results.json _site/data/
+          cp docs/results-browser.png _site/docs/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
