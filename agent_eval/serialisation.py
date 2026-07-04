@@ -22,36 +22,20 @@ type, so each pair is stored as a [str, int] list. dict_to_tag
 reconstructs each pair as a tuple(str, int).
 """
 
-try:
-    from agent_eval.tag_schema import (
-        AssumptionItem,
-        AssumptionsStatedEvidence,
-        CausalStep,
-        ClaimTag,
-        CriterionEvidence,
-        DefinitionGroup,
-        DistinctFinding,
-        DomainCheckEvidence,
-        QuoteMatchEvidence,
-        SourcePluralityEvidence,
-        TPIManagementQualityEvidence,
-        UnresolvedFinding,
-    )
-except ModuleNotFoundError:
-    from agent_eval.tag_schema import (  # type: ignore[no-redef]
-        AssumptionItem,
-        AssumptionsStatedEvidence,
-        CausalStep,
-        ClaimTag,
-        CriterionEvidence,
-        DefinitionGroup,
-        DistinctFinding,
-        DomainCheckEvidence,
-        QuoteMatchEvidence,
-        SourcePluralityEvidence,
-        TPIManagementQualityEvidence,
-        UnresolvedFinding,
-    )
+from agent_eval.tag_schema import (
+    AssumptionItem,
+    AssumptionsStatedEvidence,
+    CausalStep,
+    ClaimTag,
+    CriterionEvidence,
+    DefinitionGroup,
+    DistinctFinding,
+    DomainCheckEvidence,
+    QuoteMatchEvidence,
+    SourcePluralityEvidence,
+    TPIManagementQualityEvidence,
+    UnresolvedFinding,
+)
 
 # ─── evidence serialisers ─────────────────────────────────────────────────────
 
