@@ -32,12 +32,19 @@ class FetchResult(TypedDict):
 
     success=True guarantees text is a str; on failure text is None and
     failure_reason names the specific failure (see fetch_page_text).
+
+    final_url is the URL the content actually came from after any HTTP
+    redirects (requests follows them by default). A URL that passes the
+    domain check can redirect off-domain, so verification layers must
+    re-validate final_url rather than trust the requested URL — see
+    adr/0023-redirect-revalidation.md. None on failure.
     """
 
     success: bool
     text: str | None
     content_type: str | None
     failure_reason: str | None
+    final_url: str | None
 
 
 # Size caps applied during streaming (no Content-Length) or before download
@@ -129,6 +136,7 @@ def fetch_page_text(url: str, timeout: int = 10) -> FetchResult:
             "text":           str | None,   # None on failure
             "content_type":   str | None,   # raw Content-Type header value
             "failure_reason": str | None,   # None on success
+            "final_url":      str | None,   # post-redirect URL; None on failure
         }
 
     failure_reason values:
@@ -153,6 +161,7 @@ def fetch_page_text(url: str, timeout: int = 10) -> FetchResult:
             "text": None,
             "content_type": content_type,
             "failure_reason": reason,
+            "final_url": None,
         }
 
     try:
@@ -226,4 +235,7 @@ def fetch_page_text(url: str, timeout: int = 10) -> FetchResult:
         "text": text,
         "content_type": raw_ct,
         "failure_reason": None,
+        # The post-redirect URL the body actually came from. Consumers that
+        # gated on the requested URL's domain must re-validate this one.
+        "final_url": str(response.url),
     }

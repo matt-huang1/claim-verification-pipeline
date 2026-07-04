@@ -264,6 +264,10 @@ def gather_source_findings(
     # In-call fetch cache. Keyed by exact URL string from search results.
     # Scoped to this call only — see module docstring.
     fetch_cache: dict[str, str] = {}
+    # Post-redirect URL per fetched URL, so source_type reflects where the
+    # content actually came from (adr/0023-redirect-revalidation.md).
+    # Absent (fakes without final_url) falls back to the requested URL.
+    final_urls: dict[str, str] = {}
 
     findings: list[SourceFinding] = []
     total_attempts = 0
@@ -302,9 +306,13 @@ def gather_source_findings(
             # the cast is annotation-only.
             document = cast(str, fetch_result["text"])
             fetch_cache[url] = document
+            final_urls[url] = fetch_result.get("final_url") or url
 
         # --- source type ---
-        domain_result = check_domain(url, allowlist)
+        # Checked against the post-redirect URL: content that arrived from
+        # off-domain must not be labelled "official" just because the
+        # requested URL was on the allowlist.
+        domain_result = check_domain(final_urls.get(url, url), allowlist)
         source_type = "official" if domain_result["passed"] else "third_party"
 
         # --- find_source_finding ---

@@ -666,3 +666,62 @@ def test_bucket_a_and_bucket_b_entries_coexist_in_shared_log(tmp_path):
     b_entries = [e for e in entries if e["bucket"] == "B"]
     assert all(e["company_name"] == "TSMC" for e in a_entries)
     assert all(e["company_name"] == "TSMC" for e in b_entries)
+
+
+# ---------------------------------------------------------------------------
+# Redirect re-validation (adr/0023)
+# ---------------------------------------------------------------------------
+
+
+def test_source_type_uses_post_redirect_url(tmp_path):
+    """
+    A fetch whose final_url landed off the allowlist must label the evidence
+    third_party even though the requested URL was official — the label
+    describes where the content actually came from
+    (adr/0023-redirect-revalidation.md).
+    """
+
+    def redirecting_fetch_fn(url):
+        return {
+            "success": True,
+            "text": FAKE_DOCUMENT,
+            "content_type": "text/html",
+            "failure_reason": None,
+            "final_url": "https://cdn.thirdparty.example/mirror",
+        }
+
+    tag = run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-redirect",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=redirecting_fetch_fn,
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+
+    assert tag.criteria_evidence is not None
+    assert tag.criteria_evidence[0].evidence_source_type == "third_party"
+
+
+def test_source_type_unchanged_when_fake_omits_final_url(tmp_path):
+    """
+    Fakes that predate final_url keep their exact previous behaviour: the
+    requested URL (on the allowlist) determines the label.
+    """
+    tag = run_bucket_b_pipeline(
+        company_name="TSMC",
+        claim_id="tsmc-b-no-redirect",
+        allowlist=TSMC_ALLOWLIST,
+        criteria=["ambition"],
+        search_fn=_make_search_fn(),
+        url_llm_fn=_make_url_llm_fn(),
+        fetch_fn=_make_fetch_fn(),
+        criterion_evidence_fn=_make_criterion_evidence_fn(),
+        log_dir=str(tmp_path),
+    )
+
+    assert tag.criteria_evidence is not None
+    assert tag.criteria_evidence[0].evidence_source_type == "official"

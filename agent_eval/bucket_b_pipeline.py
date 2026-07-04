@@ -175,6 +175,10 @@ def run_bucket_b_pipeline(
     # In-call fetch cache. Keyed by URL (exact string from search results).
     # Scoped to this call only — see module docstring for why it is not global.
     fetch_cache: dict[str, str] = {}
+    # Post-redirect URL per fetched URL, so evidence_source_type reflects
+    # where the content actually came from (adr/0023-redirect-revalidation.md).
+    # Absent (fakes without final_url) falls back to the requested URL.
+    final_urls: dict[str, str] = {}
 
     gathered: list[CriterionEvidence] = []
 
@@ -260,6 +264,7 @@ def run_bucket_b_pipeline(
             # the cast is annotation-only.
             document = cast(str, fetch_result["text"])
             fetch_cache[url] = document
+            final_urls[url] = fetch_result.get("final_url") or url
 
         # --- criterion evidence extraction ---
         result = _criterion_evidence_fn(document, criterion_name, criterion_text)
@@ -278,7 +283,10 @@ def run_bucket_b_pipeline(
             continue
 
         # --- evidence_source_type via domain check ---
-        domain_result = check_domain(url, allowlist)
+        # Checked against the post-redirect URL: content that arrived from
+        # off-domain must not be labelled "official" just because the
+        # requested URL was on the allowlist.
+        domain_result = check_domain(final_urls.get(url, url), allowlist)
         source_type = "official" if domain_result["passed"] else "third_party"
 
         _log_criterion_attempt(

@@ -240,7 +240,12 @@ def _run_bucket_a(
     """
     from agent_eval.page_fetch import fetch_page_text
 
-    _captured: dict[str, str] = {"url": "", "quote": "", "document": ""}
+    _captured: dict[str, str] = {
+        "url": "",
+        "quote": "",
+        "document": "",
+        "final_url": "",
+    }
 
     def _cap_llm(ct: str, fb: str | None, sr: list[SearchResult]) -> dict:
         fn = extraction_llm_fn or _extraction_default_llm_call
@@ -254,6 +259,7 @@ def _run_bucket_a(
         result = fn(url)
         if result.get("success"):
             _captured["document"] = result.get("text") or ""
+            _captured["final_url"] = result.get("final_url") or ""
         return result
 
     a_result = extract_claim_evidence(
@@ -270,10 +276,14 @@ def _run_bucket_a(
     if a_result["status"] != "verified":
         return None
 
+    # Rebuild the tag against the post-redirect URL when the fetch layer
+    # reported one, mirroring extraction.py's re-validation
+    # (adr/0023-redirect-revalidation.md). Fakes without final_url fall back
+    # to the proposed URL.
     return verify_bucket_a_claim(
         claim_id=claim_id,
         claim_text=claim_text,
-        url=_captured["url"],
+        url=_captured["final_url"] or _captured["url"],
         allowlist=allowlist,
         quote=_captured["quote"],
         document=_captured["document"],

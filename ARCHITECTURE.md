@@ -59,7 +59,7 @@ flowchart LR
     pl --> tag["tag_schema.py<br/>ClaimTag with computed overall_status"]
 ```
 
-The loop in `extraction.py` retries up to a hard cap of 3, stopping early when repeated attempts show no measurable progress — and if search returns zero results, the LLM is never called for that attempt (the [no-fallback rule](adr/0006-extraction.md)).
+The loop in `extraction.py` retries up to a hard cap of 3, stopping early when repeated attempts show no measurable progress — and if search returns zero results, the LLM is never called for that attempt (the [no-fallback rule](adr/0006-extraction.md)). After a successful fetch, the domain check runs against the post-redirect URL, so content is verified against where it actually came from, not just the URL that was requested ([why](adr/0023-redirect-revalidation.md)).
 
 ## Layering principles
 

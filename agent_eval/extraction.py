@@ -481,12 +481,18 @@ def extract_claim_evidence(
             feedback = _build_fetch_feedback(failure_reason)
             continue
 
+        # The domain check must run against the URL the content actually came
+        # from: requests follows redirects, so a URL that passes the allowlist
+        # can 302 off-domain and the fetched document would come from
+        # elsewhere (adr/0023-redirect-revalidation.md). Fakes that omit
+        # final_url fall back to the proposed URL, preserving their behaviour.
         # success=True guarantees text is a str (FetchResult contract); the
         # cast is annotation-only.
+        final_url = fetch_result.get("final_url") or url
         tag = verify_bucket_a_claim(
             claim_id=claim_id,
             claim_text=claim_text,
-            url=url,
+            url=final_url,
             allowlist=allowlist,
             quote=quote,
             document=cast(str, fetch_result["text"]),

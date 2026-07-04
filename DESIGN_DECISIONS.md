@@ -32,3 +32,4 @@ Each record follows the ADR structure — **Context**, **Decision**, **Consequen
 | 0020 | [run_pipeline.py](adr/0020-run-pipeline.md) | The top-level dispatcher |
 | 0021 | [serialisation.py, run_batch.py, and index.html](adr/0021-results-layer.md) | The results layer |
 | 0022 | [Known open limitations](adr/0022-known-open-limitations.md) | Real, current gaps, named explicitly |
+| 0023 | [Re-validating the post-redirect URL](adr/0023-redirect-revalidation.md) | Content is checked against where it actually came from |

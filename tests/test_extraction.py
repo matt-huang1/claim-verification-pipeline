@@ -760,3 +760,74 @@ def test_live_tsmc_extraction(tmp_path):
     assert verified["company_name"] == "TSMC"
     assert "tsmc.com" in verified["url"]
     assert len(verified["quote"]) > MINIMUM_QUOTE_LENGTH_CHARS
+
+
+# --- redirect re-validation (adr/0023) --------------------------------------
+
+
+def test_off_allowlist_redirect_is_source_illegitimate(tmp_path):
+    """
+    A proposed URL on the allowlist whose fetch reports an off-domain
+    final_url must not verify: the domain check runs against where the
+    content actually came from (adr/0023-redirect-revalidation.md).
+    """
+
+    def good_llm(claim_text, feedback, search_results):
+        return {
+            "url": "https://pr.tsmc.com/english/news/3067",
+            "quote": TSMC_TRUE_QUOTE,
+        }
+
+    def redirecting_fetch(url):
+        return {
+            "success": True,
+            "text": TSMC_DOCUMENT,
+            "content_type": "text/html",
+            "failure_reason": None,
+            "final_url": "https://evil.example/cached-copy",
+        }
+
+    result = extract_claim_evidence(
+        "TSMC is moving its 100 percent renewable target to 2040 from 2050",
+        allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
+        llm_fn=good_llm,
+        search_fn=_always_finds,
+        fetch_fn=redirecting_fetch,
+        log_dir=str(tmp_path),
+    )
+    assert result["status"] == "unverifiable_after_retries"
+    assert result["last_attempt_status"] == "source_illegitimate"
+
+
+def test_same_domain_redirect_still_verifies(tmp_path):
+    """
+    A redirect that stays on the allowlisted domain (scheme change, path
+    move, www variant) must not change the verified outcome.
+    """
+
+    def good_llm(claim_text, feedback, search_results):
+        return {
+            "url": "https://pr.tsmc.com/english/news/3067",
+            "quote": TSMC_TRUE_QUOTE,
+        }
+
+    def redirecting_fetch(url):
+        return {
+            "success": True,
+            "text": TSMC_DOCUMENT,
+            "content_type": "text/html",
+            "failure_reason": None,
+            "final_url": "https://www.tsmc.com/english/news/3067-moved",
+        }
+
+    result = extract_claim_evidence(
+        "TSMC is moving its 100 percent renewable target to 2040 from 2050",
+        allowlist=TSMC_ALLOWLIST,
+        company_name="TSMC",
+        llm_fn=good_llm,
+        search_fn=_always_finds,
+        fetch_fn=redirecting_fetch,
+        log_dir=str(tmp_path),
+    )
+    assert result["status"] == "verified"

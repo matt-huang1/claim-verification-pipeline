@@ -376,3 +376,32 @@ def test_unsupported_content_type_returns_failure():
         result = fetch_page_text("https://tsmc.com/logo.png")
     assert result["success"] is False
     assert result["failure_reason"] == "unsupported_content_type"
+
+
+# --- final_url reporting (adr/0023) -----------------------------------------
+
+
+def test_success_reports_post_redirect_final_url():
+    """
+    fetch_page_text must surface the URL the content actually came from
+    (response.url after redirects), so verification layers can re-validate
+    it (adr/0023-redirect-revalidation.md).
+    """
+    mock_resp = _mock_response(
+        content_type="text/html; charset=utf-8",
+        content_length=len(HTML_BODY),
+        body=HTML_BODY,
+    )
+    mock_resp.url = "https://www.tsmc.com/press-moved"
+    with patch("requests.get", return_value=mock_resp):
+        result = fetch_page_text("https://tsmc.com/press")
+    assert result["success"] is True
+    assert result["final_url"] == "https://www.tsmc.com/press-moved"
+
+
+def test_failure_reports_no_final_url():
+    mock_resp = _mock_response(status_code=404)
+    with patch("requests.get", return_value=mock_resp):
+        result = fetch_page_text("https://tsmc.com/gone")
+    assert result["success"] is False
+    assert result["final_url"] is None

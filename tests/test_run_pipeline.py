@@ -656,3 +656,86 @@ def test_live_run_pipeline_bucket_d_explicit():
     assert isinstance(
         result["tag"], ClaimTag
     ), f"tag must be a ClaimTag. Full result: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Redirect re-validation through the dispatcher (adr/0023)
+# ---------------------------------------------------------------------------
+
+
+def test_bucket_a_off_allowlist_redirect_is_unverifiable(tmp_path):
+    """
+    Through the dispatcher, a proposed on-allowlist URL whose fetch reports
+    an off-domain final_url must not produce a verified tag
+    (adr/0023-redirect-revalidation.md).
+    """
+    document = (
+        "TSMC announced it is moving its target for 100 percent renewable "
+        "energy consumption for all global operations forward to 2040 from 2050."
+    )
+    quote = (
+        "moving its target for 100 percent renewable energy consumption "
+        "for all global operations forward to 2040 from 2050"
+    )
+    url = "https://pr.tsmc.com/english/news/3067"
+
+    result = run_pipeline(
+        "TSMC is moving its 100 percent renewable target to 2040 from 2050",
+        allowlist=["tsmc.com", "pr.tsmc.com"],
+        company_name="TSMC",
+        claim_id="tsmc-a-redirect",
+        bucket="A",
+        extraction_llm_fn=lambda ct, fb, sr: {"url": url, "quote": quote},
+        extraction_search_fn=lambda q: [
+            {"url": url, "title": "TSMC", "snippet": "..."}
+        ],
+        extraction_fetch_fn=lambda u: {
+            "success": True,
+            "text": document,
+            "content_type": "text/html",
+            "failure_reason": None,
+            "final_url": "https://evil.example/cached-copy",
+        },
+        log_dir=str(tmp_path),
+    )
+    assert result["outcome"] == "unverifiable"
+    assert result["tag"] is None
+
+
+def test_bucket_a_same_domain_redirect_tag_reflects_final_url(tmp_path):
+    """
+    On success, the rebuilt ClaimTag's domain evidence describes the
+    post-redirect URL — the document that was actually checked.
+    """
+    document = (
+        "TSMC announced it is moving its target for 100 percent renewable "
+        "energy consumption for all global operations forward to 2040 from 2050."
+    )
+    quote = (
+        "moving its target for 100 percent renewable energy consumption "
+        "for all global operations forward to 2040 from 2050"
+    )
+    url = "https://pr.tsmc.com/english/news/3067"
+
+    result = run_pipeline(
+        "TSMC is moving its 100 percent renewable target to 2040 from 2050",
+        allowlist=["tsmc.com", "pr.tsmc.com"],
+        company_name="TSMC",
+        claim_id="tsmc-a-redirect-ok",
+        bucket="A",
+        extraction_llm_fn=lambda ct, fb, sr: {"url": url, "quote": quote},
+        extraction_search_fn=lambda q: [
+            {"url": url, "title": "TSMC", "snippet": "..."}
+        ],
+        extraction_fetch_fn=lambda u: {
+            "success": True,
+            "text": document,
+            "content_type": "text/html",
+            "failure_reason": None,
+            "final_url": "https://www.tsmc.com/english/news/3067-moved",
+        },
+        log_dir=str(tmp_path),
+    )
+    assert result["outcome"] == "verified"
+    assert result["tag"] is not None
+    assert result["tag"].domain_evidence.domain == "tsmc.com"

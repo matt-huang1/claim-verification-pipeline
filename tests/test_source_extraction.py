@@ -606,3 +606,59 @@ def test_live_gather_tsmc_foundry_market_share():
         # bucket_b_pipeline.py's enriched live test assertions).
         first = results[0]
         assert first.source_type in ("official", "third_party")
+
+
+# ---------------------------------------------------------------------------
+# Redirect re-validation (adr/0023)
+# ---------------------------------------------------------------------------
+
+
+def test_source_type_uses_post_redirect_url():
+    """
+    A fetch whose final_url landed off the allowlist must label the finding
+    third_party even though the requested URL was official — the label
+    describes where the content actually came from
+    (adr/0023-redirect-revalidation.md).
+    """
+    official_url = "https://tsmc.com/market-report"
+    redirected_result = {
+        "success": True,
+        "text": _DOC_WITH_BOTH,
+        "content_type": "text/html",
+        "failure_reason": None,
+        "final_url": "https://cdn.thirdparty.example/mirror",
+    }
+
+    results = gather_source_findings(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        allowlist=["tsmc.com"],
+        target_source_count=1,
+        search_fn=_make_search_fn(
+            [{"url": official_url, "title": "Report", "snippet": "..."}]
+        ),
+        url_llm_fn=_make_url_llm_fn(official_url),
+        fetch_fn=_make_fetch_fn(redirected_result),
+        finding_llm_fn=_both_found_fn,
+    )
+    assert len(results) == 1
+    assert results[0].source_type == "third_party"
+    # source_url stays the requested URL — deduplication semantics unchanged.
+    assert results[0].source_url == official_url
+
+
+def test_source_type_unchanged_when_fake_omits_final_url():
+    """Fakes without final_url keep their exact previous behaviour."""
+    official_url = "https://tsmc.com/market-report"
+    results = gather_source_findings(
+        claim_text="TSMC has roughly 60% of the foundry market",
+        allowlist=["tsmc.com"],
+        target_source_count=1,
+        search_fn=_make_search_fn(
+            [{"url": official_url, "title": "Report", "snippet": "..."}]
+        ),
+        url_llm_fn=_make_url_llm_fn(official_url),
+        fetch_fn=_make_fetch_fn(),
+        finding_llm_fn=_both_found_fn,
+    )
+    assert len(results) == 1
+    assert results[0].source_type == "official"
