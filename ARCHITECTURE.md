@@ -30,6 +30,7 @@ flowchart TD
     rp -->|"no bucket supplied"| triage["bucket_triage.py<br/>LLM classification, never retried"]
     triage -->|"bucket_a"| a
     triage -->|"bucket_c"| c
+    triage -->|"bucket_d"| d
     triage -->|"ambiguous or malformed"| none(["no tag - outcome surfaced for a human"])
     explicit -->|"A"| a["Bucket A pipeline<br/>extraction.py"]
     explicit -->|"B"| b["Bucket B pipeline<br/>bucket_b_pipeline.py"]
@@ -41,10 +42,11 @@ flowchart TD
     d --> tag
 ```
 
-Two routing rules are deliberate, not omissions:
+Three routing rules are deliberate, not omissions:
 
 - **Triage never routes to Bucket B.** Framework alignment requires a human to identify which framework applies and which criteria to check - triage has no basis for that from claim text alone. Bucket B always requires explicit `bucket="B"` from the caller. ([why](adr/0020-run-pipeline.md))
-- **Triage never routes to Bucket D.** At current project scale, a human identifies counterfactual/forward-looking claims before the pipeline runs. ([why](adr/0019-bucket-d-analysis-and-pipeline.md))
+- **Triage routes to A, C, and D - and the router itself is measured.** Bucket D routing was originally deferred to a human reader ([the original reasoning](adr/0019-bucket-d-analysis-and-pipeline.md)) and later added to triage; the scored spot-check now measures routing accuracy across all three buckets against the labeled ground truth, with misses recorded as taxonomy findings rather than tuned away ([ADR-0024](adr/0024-triage-accuracy-eval.md)).
+- **Triage runs exactly once per dispatched claim.** When the dispatcher routes to Bucket C, the C pipeline receives a stub replaying the decision already made rather than re-triaging - a second nondeterministic call would cost a duplicate API call and could contradict the routing already decided. ([why](adr/0027-dispatcher-triages-once.md))
 
 ## The Bucket A verification chain
 
@@ -69,7 +71,7 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 
 **Anchoring inputs are explicit parameters, never inferred.** `company_name`, `allowlist`, and the document under test are always caller-supplied. If the model chose them, a hallucinated source could validate itself. ([why](adr/0015-bucket-b-pipeline.md))
 
-**Failures are named, never collapsed.** Distinct failure mechanisms get distinct statuses (`numeric_mismatch` vs `no_match`, `company_not_in_tpi_universe` vs a transient fetch failure, `unresolved` vs `failed_reconciliation`) because they carry different diagnostic and review implications.
+**Failures are named, never collapsed.** Distinct failure mechanisms get distinct statuses (`numeric_mismatch` vs `no_match`, `company_not_in_tpi_universe` vs a transient fetch failure, `unresolved` vs `failed_reconciliation`) because they carry different diagnostic and review implications. The principle applies to the system's own environment too: a search layer that cannot run at all (missing key, quota, network) surfaces as `search_unavailable`, never as an honest-looking "no sources found" verdict about the claim. ([why](adr/0026-search-unavailability.md))
 
 **`overall_status` is computed, never settable.** `ClaimTag.overall_status` is a read-only property recomputed from the attached evidence, so "verified" can never be asserted without the evidence that makes it true. ([why](adr/0004-tag-schema.md))
 
@@ -96,7 +98,7 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 | | `agent_eval/bucket_c_pipeline.py` | Bucket C orchestrator: triage → source gathering → reconciliation |
 | | `agent_eval/bucket_d_pipeline.py` | Bucket D orchestrator |
 | | `agent_eval/run_pipeline.py` | Top-level dispatcher |
-| External services | `agent_eval/web_search.py` | Tavily search wrapper - generic, knows nothing about claims |
+| External services | `agent_eval/web_search.py` | Tavily search wrapper - generic, knows nothing about claims; unavailability is a named failure, never an empty result |
 | | `agent_eval/llm_client.py` | Provider seam: the one place the concrete LLM (OpenAI) is named; every LLM-calling module depends on the `LLMClient` interface, not the SDK |
 | Support & data | `agent_eval/log_utils.py` | Shared JSONL append helper for the evaluation log |
 | | `agent_eval/ground_truth.py` | Primary-source verified claims and metadata for 9 companies (used by live tests, not imported by pipeline modules) |

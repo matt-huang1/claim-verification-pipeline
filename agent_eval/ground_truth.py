@@ -1,7 +1,7 @@
 # ground_truth.py
 """
-Verified ground-truth claims and company metadata for the agent evaluation
-framework. All entries drawn from publicly available primary sources
+Verified ground-truth claims and company metadata for the claim verification
+pipeline. All entries drawn from publicly available primary sources
 (company press releases, sustainability reports, and the public TPI and
 NZIF frameworks) that underpin transition-enabler assessments produced for
 an asset manager. Used in live tests and manual verification runs — not

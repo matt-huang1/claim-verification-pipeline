@@ -3,7 +3,7 @@
 [![CI](https://github.com/matt-huang1/claim-verification-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/matt-huang1/claim-verification-pipeline/actions/workflows/ci.yml)
 [![Coverage ≥ 90% (CI-enforced)](https://img.shields.io/badge/coverage-%E2%89%A590%25_CI--enforced-brightgreen.svg)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 
 A verification layer for AI-assisted climate transition research at an asset manager. Its job is to catch errors before they reach client documents - specifically, cases where a model produces plausible-sounding claims not grounded in primary sources. Every URL, quote, and figure a model proposes is checked deterministically against independently fetched primary sources before anything is called verified.
 
@@ -16,10 +16,11 @@ A verification layer for AI-assisted climate transition research at an asset man
 The project's thesis is that a check only counts if it would give a different answer in the world where the claim is false. That is a testable claim, so it is tested directly. A deterministic self-evaluation feeds the verifier adversarial proposals - spoofed domains (including prefix and port-injection look-alikes), quotes with a hallucinated year or figure, and quotes fabricated outright - alongside honest clean controls, and asserts each is caught with the correct, specific status. The clean controls matter: they prove the suite cannot pass by simply rejecting everything.
 
 ```
+pip install -e .                       # one-time setup: package + dependencies
 python scripts/adversarial_eval.py     # offline, no API key, no cost
 ```
 
-**Current result: every adversarial case caught with the correct specific status, and every clean control verified.** The suite runs in CI on every push ([tests/test_adversarial_eval.py](tests/test_adversarial_eval.py)), so a change that silently weakened a check turns the build red.
+**Current result: 7/7 adversarial cases caught with the correct specific status, and 2/2 clean controls verified.** The suite runs in CI on every push ([tests/test_adversarial_eval.py](tests/test_adversarial_eval.py)), so a change that silently weakened a check turns the build red.
 
 The same standard applies one level down and one level up:
 
@@ -63,7 +64,9 @@ The deterministic suite proves the logic is internally consistent; only live run
 2. **The search query that returned nothing** - Bucket B's first live run produced zero search results for every criterion, because "TSMC ambition" is too weak a query. Three candidate fixes were tested against the live API before one was locked in with a regression test. ([ADR-0015](adr/0015-bucket-b-pipeline.md))
 3. **The NZIF criteria that were never actually verified** - the framework criteria hardcoded into the pipeline turned out to be an LLM reconstruction, not the real document: it invented a criterion that doesn't exist and omitted one that does. Caught by asking the project's own founding question of its own code; fixed by hand-transcribing the real primary source, now locked in with a golden-file test. ([ADR-0010](adr/0010-criterion-evidence.md))
 
-The same discipline found security bugs before any live run did: a working port-injection bypass of the domain check (`https://evil.com:.tsmc.com/`) was confirmed by running the exploit, then fixed and permanently regression-tested in the adversarial suite. ([ADR-0002](adr/0002-domain-check.md))
+The same discipline found security bugs before any live run did: a working port-injection bypass of the domain check (`https://evil.com:.tsmc.com/`) was confirmed by running the exploit, then fixed and permanently regression-tested in the adversarial suite. A second independent review of the same code had reported it safe - it tested substring spoofing thoroughly but never tried corrupting the URL parser itself, which is exactly why exploits are confirmed by execution here, never by explanation. ([ADR-0002](adr/0002-domain-check.md))
+
+The same standard applies to the system's own environment: a missing or failing search API key surfaces as the named outcome `search_unavailable` at every level, because a configuration error that reports "this claim could not be verified" would itself be a non-discriminating check. Found by external review, fixed, and regression-tested. ([ADR-0026](adr/0026-search-unavailability.md))
 
 ## Where the line was drawn
 
@@ -86,7 +89,7 @@ python -m flake8 .                                 # lint
 python -m mypy                                     # static type check (strict: all defs annotated)
 ```
 
-The runtime package (`pip install -e .`) pulls in only what the pipeline needs to run; pytest, black, flake8, and mypy live in the `dev` extra so they are not forced on consumers of the package. CI runs the full suite on Python 3.10-3.12, enforces a minimum coverage threshold, runs the adversarial self-evaluation, and link-checks the documentation (a doc reference that no longer points at its evidence fails the build).
+The runtime package (`pip install -e .`) pulls in only what the pipeline needs to run; pytest, black, flake8, and mypy live in the `dev` extra so they are not forced on consumers of the package. CI runs the full suite on Python 3.10-3.13 against pinned dependency versions ([constraints.txt](constraints.txt), updated by reviewed Dependabot PRs, so an upstream release can't silently change what a build tests), enforces a minimum coverage threshold, runs the adversarial self-evaluation, audits dependencies for known vulnerabilities (`pip-audit`), and link-checks the documentation (a doc reference that no longer points at its evidence fails the build).
 
 ## Documentation
 
@@ -98,5 +101,6 @@ The runtime package (`pip install -e .`) pulls in only what the pipeline needs t
 | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) | Real, current gaps - named explicitly rather than left as implicit TODOs |
 | [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | Index of Architecture Decision Records (ADRs) |
 | [adr/](adr/) | Individual Architecture Decision Records, one per decision |
+| [CHANGELOG.md](CHANGELOG.md) | Versioned history of what changed and why |
 
 See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) for the ADR index and the full design trail, including every rejected alternative and every real bug found in live runs. Each decision is recorded as an individual ADR under [adr/](adr/).
