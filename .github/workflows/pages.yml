@@ -38,7 +38,7 @@ jobs:
           cp data/sample_results.json _site/data/
           cp docs/results-browser.png _site/docs/
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
