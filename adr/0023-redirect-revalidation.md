@@ -12,8 +12,8 @@ from. The gap: a URL that passes the domain check can 302 off-domain (an open
 redirect on a legitimate domain, a press release moved to a third-party CDN),
 and the fetched document silently comes from elsewhere while the ClaimTag
 records the domain check as passed. This is precisely the class of failure
-the project exists to catch — a confident label ("verified", "official") not
-actually earned by what it claims — found by external review rather than a
+the project exists to catch - a confident label ("verified", "official") not
+actually earned by what it claims - found by external review rather than a
 live run.
 
 ## Decision
@@ -38,7 +38,7 @@ live run.
 ## Consequences
 
 - Same-domain redirects (http→https, `www.` variants, path moves within an
-  allowlisted domain) behave exactly as before — the subdomain-suffix
+  allowlisted domain) behave exactly as before - the subdomain-suffix
   matching in `check_domain` is unchanged.
 - A third-party URL redirecting *into* an allowlisted domain now passes the
   domain check, which is correct: the document genuinely came from the

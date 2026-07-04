@@ -1,4 +1,4 @@
-# ADR-0002: domain_check.py — verifying a URL is who it claims to be
+# ADR-0002: domain_check.py - verifying a URL is who it claims to be
 
 ## Status
 
@@ -6,9 +6,9 @@ Accepted
 
 ## Context
 
-`domain_check.py` checks a claimed source URL's domain against an allowlist of known-legitimate domains for a company. It deliberately knows nothing about companies, claims, or buckets — generic on purpose, so the same function works regardless of what is being checked.
+`domain_check.py` checks a claimed source URL's domain against an allowlist of known-legitimate domains for a company. It deliberately knows nothing about companies, claims, or buckets - generic on purpose, so the same function works regardless of what is being checked.
 
-Why domain check exists at all, and why it does not cross-reference third parties: for a company's own self-announcement (a press release), the company's own domain is the authoritative source by definition. A third party reporting on the announcement does not make the announcement more true — it is not a Bucket C "multiple sources, reconcile definitions" situation. Checking three news sites about whether TSMC put out a press release would have been the exact re-asking-the-same-question-differently mistake from the origin story ([ADR-0001](0001-origin-non-discriminating-verification.md)).
+Why domain check exists at all, and why it does not cross-reference third parties: for a company's own self-announcement (a press release), the company's own domain is the authoritative source by definition. A third party reporting on the announcement does not make the announcement more true - it is not a Bucket C "multiple sources, reconcile definitions" situation. Checking three news sites about whether TSMC put out a press release would have been the exact re-asking-the-same-question-differently mistake from the origin story ([ADR-0001](0001-origin-non-discriminating-verification.md)).
 
 There are dedicated domain-validation libraries (`tldextract`, etc.) that handle edge cases like public suffix lists more robustly than hand-rolled string logic.
 

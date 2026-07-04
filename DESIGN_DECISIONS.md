@@ -1,16 +1,16 @@
-# Architecture Decision Records — Index
+# Architecture Decision Records - Index
 
-This is the index of Architecture Decision Records (ADRs) for this project. The [README](README.md) tells a stranger what the system does; these records document *why* each decision was made, including the approaches that were tried and rejected — the full reasoning behind any single line, kept so every decision can be defended unprompted. For the resulting structure, see [ARCHITECTURE.md](ARCHITECTURE.md); for current gaps, see [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
+This is the index of Architecture Decision Records (ADRs) for this project. The [README](README.md) tells a stranger what the system does; these records document *why* each decision was made, including the approaches that were tried and rejected - the full reasoning behind any single line, kept so every decision can be defended unprompted. For the resulting structure, see [ARCHITECTURE.md](ARCHITECTURE.md); for current gaps, see [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md).
 
 The core thesis behind every decision recorded here: **a check only counts if it would have given a different answer in the world where the claim was false.** A check that says "looks fine" regardless of truth is not a check, it is theater. This is called **non-discriminating verification** throughout, and it is the thing every fix below was correcting for.
 
-Each record follows the ADR structure — **Context**, **Decision**, **Consequences** — and lives as an individual file under [adr/](adr/). No information from the original design record has been dropped; the records preserve the full reasoning, every rejected alternative, and every real bug found in live runs.
+Each record follows the ADR structure - **Context**, **Decision**, **Consequences** - and lives as an individual file under [adr/](adr/). No information from the original design record has been dropped; the records preserve the full reasoning, every rejected alternative, and every real bug found in live runs.
 
 ## Records
 
 | # | Record | Summary |
 |---|--------|---------|
-| 0001 | [Founding principle — non-discriminating verification](adr/0001-origin-non-discriminating-verification.md) | The failure that started this and the thesis it produced |
+| 0001 | [Founding principle - non-discriminating verification](adr/0001-origin-non-discriminating-verification.md) | The failure that started this and the thesis it produced |
 | 0002 | [domain_check.py](adr/0002-domain-check.md) | Is this URL actually who it claims to be |
 | 0003 | [quote_match.py](adr/0003-quote-match.md) | Does this quote actually appear in this document |
 | 0004 | [tag_schema.py](adr/0004-tag-schema.md) | What "verified" means and who is allowed to say it |
@@ -33,3 +33,5 @@ Each record follows the ADR structure — **Context**, **Decision**, **Consequen
 | 0021 | [serialisation.py, run_batch.py, and index.html](adr/0021-results-layer.md) | The results layer |
 | 0022 | [Known open limitations](adr/0022-known-open-limitations.md) | Real, current gaps, named explicitly |
 | 0023 | [Re-validating the post-redirect URL](adr/0023-redirect-revalidation.md) | Content is checked against where it actually came from |
+| 0024 | [Scoring the triage router](adr/0024-triage-accuracy-eval.md) | A scored spot-check of the one LLM judgment in front of the verifier |
+| 0025 | [Property-based tests](adr/0025-property-based-testing.md) | The invariants asserted for every input, not just curated examples |

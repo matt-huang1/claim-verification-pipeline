@@ -1,6 +1,6 @@
 # Architecture
 
-How the system is structured and why the structure looks the way it does. This document describes the shape of the system; the reasoning behind each individual decision — including rejected alternatives and the real bugs that drove changes — lives in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) and is linked throughout.
+How the system is structured and why the structure looks the way it does. This document describes the shape of the system; the reasoning behind each individual decision - including rejected alternatives and the real bugs that drove changes - lives in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) and is linked throughout.
 
 ## The core principle
 
@@ -12,10 +12,10 @@ Claims are classified into four buckets, each with a different verification mech
 
 | Bucket | Type | How it's checked |
 |---|---|---|
-| **A** | Source verification — a single authoritative source exists (a press release, a TPI score, a regulatory filing) | Deterministic: domain check + quote match against the real document |
-| **B** | Framework alignment — judgment against NZIF or TPI criteria | Evidence gathered for human review — never automated |
-| **C** | Definition disambiguation — definitionally fuzzy claims (e.g. market share) where "the answer" depends on scope | Multiple sources gathered, definitions reconciled |
-| **D** | Reasoning transparency — counterfactual or forward-looking claims, uncheckable by definition | Assumptions and causal chain surfaced for human review |
+| **A** | Source verification - a single authoritative source exists (a press release, a TPI score, a regulatory filing) | Deterministic: domain check + quote match against the real document |
+| **B** | Framework alignment - judgment against NZIF or TPI criteria | Evidence gathered for human review - never automated |
+| **C** | Definition disambiguation - definitionally fuzzy claims (e.g. market share) where "the answer" depends on scope | Multiple sources gathered, definitions reconciled |
+| **D** | Reasoning transparency - counterfactual or forward-looking claims, uncheckable by definition | Assumptions and causal chain surfaced for human review |
 
 Why the taxonomy is defined by *whether a single authoritative source exists in principle*, not by how a claim is phrased, is worked through with real counterexamples in [Designing Bucket C](adr/0013-designing-bucket-c.md).
 
@@ -30,7 +30,7 @@ flowchart TD
     rp -->|"no bucket supplied"| triage["bucket_triage.py<br/>LLM classification, never retried"]
     triage -->|"bucket_a"| a
     triage -->|"bucket_c"| c
-    triage -->|"ambiguous or malformed"| none(["no tag — outcome surfaced for a human"])
+    triage -->|"ambiguous or malformed"| none(["no tag - outcome surfaced for a human"])
     explicit -->|"A"| a["Bucket A pipeline<br/>extraction.py"]
     explicit -->|"B"| b["Bucket B pipeline<br/>bucket_b_pipeline.py"]
     explicit -->|"C"| c["Bucket C pipeline<br/>bucket_c_pipeline.py"]
@@ -43,7 +43,7 @@ flowchart TD
 
 Two routing rules are deliberate, not omissions:
 
-- **Triage never routes to Bucket B.** Framework alignment requires a human to identify which framework applies and which criteria to check — triage has no basis for that from claim text alone. Bucket B always requires explicit `bucket="B"` from the caller. ([why](adr/0020-run-pipeline.md))
+- **Triage never routes to Bucket B.** Framework alignment requires a human to identify which framework applies and which criteria to check - triage has no basis for that from claim text alone. Bucket B always requires explicit `bucket="B"` from the caller. ([why](adr/0020-run-pipeline.md))
 - **Triage never routes to Bucket D.** At current project scale, a human identifies counterfactual/forward-looking claims before the pipeline runs. ([why](adr/0019-bucket-d-analysis-and-pipeline.md))
 
 ## The Bucket A verification chain
@@ -59,13 +59,13 @@ flowchart LR
     pl --> tag["tag_schema.py<br/>ClaimTag with computed overall_status"]
 ```
 
-The loop in `extraction.py` retries up to a hard cap of 3, stopping early when repeated attempts show no measurable progress — and if search returns zero results, the LLM is never called for that attempt (the [no-fallback rule](adr/0006-extraction.md)). After a successful fetch, the domain check runs against the post-redirect URL, so content is verified against where it actually came from, not just the URL that was requested ([why](adr/0023-redirect-revalidation.md)).
+The loop in `extraction.py` retries up to a hard cap of 3, stopping early when repeated attempts show no measurable progress - and if search returns zero results, the LLM is never called for that attempt (the [no-fallback rule](adr/0006-extraction.md)). After a successful fetch, the domain check runs against the post-redirect URL, so content is verified against where it actually came from, not just the URL that was requested ([why](adr/0023-redirect-revalidation.md)).
 
 ## Layering principles
 
 **Generic modules know nothing about companies, claims, or buckets.** `domain_check.py`, `quote_match.py`, `url_compare.py`, `page_fetch.py`, `web_search.py`, and `log_utils.py` are deliberately generic so the same function works for any claim against any document. This is what let Buckets B, C, and D reuse them as building blocks instead of reimplementing them.
 
-**LLM proposals are always verified where ground truth exists.** Every excerpt an LLM proposes is checked via `quote_match` against the real fetched document; every URL via `url_compare` against real search candidates. Where no ground truth exists (triage classification, Bucket D's reading of a claim), the LLM's output is validated for *form* only, and the substantive judgment is explicitly left to a human — no module ever lets a model grade its own output. ([why](adr/0019-bucket-d-analysis-and-pipeline.md))
+**LLM proposals are always verified where ground truth exists.** Every excerpt an LLM proposes is checked via `quote_match` against the real fetched document; every URL via `url_compare` against real search candidates. Where no ground truth exists (triage classification, Bucket D's reading of a claim), the LLM's output is validated for *form* only, and the substantive judgment is explicitly left to a human - no module ever lets a model grade its own output. ([why](adr/0019-bucket-d-analysis-and-pipeline.md))
 
 **Anchoring inputs are explicit parameters, never inferred.** `company_name`, `allowlist`, and the document under test are always caller-supplied. If the model chose them, a hallucinated source could validate itself. ([why](adr/0015-bucket-b-pipeline.md))
 
@@ -79,7 +79,7 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 |---|---|---|
 | Deterministic checks | `agent_eval/domain_check.py` | URL hostname vs a per-company allowlist |
 | | `agent_eval/quote_match.py` | Fuzzy quote matching with an exact numeric token gate and an ambiguity-gap rule |
-| | `agent_eval/url_compare.py` | Same-page URL comparison — cosmetic differences tolerated, path exact |
+| | `agent_eval/url_compare.py` | Same-page URL comparison - cosmetic differences tolerated, path exact |
 | | `agent_eval/page_fetch.py` | URL → plain text (HTML and clean PDFs), size caps, honest named failures |
 | | `agent_eval/tpi_extract.py` | Deterministic TPI Management Quality parser (raw HTML, no LLM) |
 | Schema & presentation | `agent_eval/tag_schema.py` | `ClaimTag` and typed evidence dataclasses; computed `overall_status` |
@@ -90,13 +90,13 @@ The loop in `extraction.py` retries up to a hard cap of 3, stopping early when r
 | | `agent_eval/bucket_triage.py` | Bucket A vs C classification from claim text alone; "ambiguous" is never retried |
 | | `agent_eval/source_extraction.py` | Bucket C: per-source value/definition extraction, each independently verified |
 | | `agent_eval/reconciliation.py` | Bucket C: grouping sources by shared definition (one whole-list call) |
-| | `agent_eval/bucket_d_analysis.py` | Bucket D: structured partial reading of assumptions and causal steps — no verdict |
+| | `agent_eval/bucket_d_analysis.py` | Bucket D: structured partial reading of assumptions and causal steps - no verdict |
 | Orchestration | `agent_eval/pipeline.py` | Bucket A single-claim wiring (deterministic; no LLM call) |
 | | `agent_eval/bucket_b_pipeline.py` | Bucket B orchestrator: six criteria, independent chains, in-call fetch cache |
 | | `agent_eval/bucket_c_pipeline.py` | Bucket C orchestrator: triage → source gathering → reconciliation |
 | | `agent_eval/bucket_d_pipeline.py` | Bucket D orchestrator |
 | | `agent_eval/run_pipeline.py` | Top-level dispatcher |
-| External services | `agent_eval/web_search.py` | Tavily search wrapper — generic, knows nothing about claims |
+| External services | `agent_eval/web_search.py` | Tavily search wrapper - generic, knows nothing about claims |
 | | `agent_eval/llm_client.py` | Provider seam: the one place the concrete LLM (OpenAI) is named; every LLM-calling module depends on the `LLMClient` interface, not the SDK |
 | Support & data | `agent_eval/log_utils.py` | Shared JSONL append helper for the evaluation log |
 | | `agent_eval/ground_truth.py` | Primary-source verified claims and metadata for 9 companies (used by live tests, not imported by pipeline modules) |
@@ -111,9 +111,9 @@ Each bucket has its own terminal success status, deliberately distinct words bec
 
 | `overall_status` | Bucket | Meaning |
 |---|---|---|
-| `verified` | A | Both deterministic checks passed against the real document — reserved for this case only |
+| `verified` | A | Both deterministic checks passed against the real document - reserved for this case only |
 | `source_illegitimate` | A | The domain check failed, regardless of how well the quote matched |
-| `criteria_evidence_gathered` | B (NZIF) | Real, verified excerpts gathered for human judgment — never an automated verdict |
+| `criteria_evidence_gathered` | B (NZIF) | Real, verified excerpts gathered for human judgment - never an automated verdict |
 | `tpi_data_fetched` | B (TPI) | Direct deterministic fetch; no AI claim or check anywhere in the chain |
 | `conflicting_evidence_types` | B | Guard: NZIF and TPI evidence both set on one tag, which should never happen |
 | `disambiguated` | C | At least one real multi-source definition group exists |
@@ -126,7 +126,7 @@ Why none of the B/C/D success states reuse the word "verified" is covered in [ta
 
 ## Logging
 
-All four buckets write structured entries to one shared file, `logs/evaluation_log.jsonl`, via `log_utils.py`. Every entry carries `company_name` and `bucket` as top-level fields so cross-bucket, cross-company history is queryable without merging files. Granularity is one entry per attempt (Bucket A) or per criterion/call (B, C, D), each with a `stage_reached` field — chosen because that granularity proved sufficient for diagnosing every real live failure. The log's explicit purpose is to let a human independently judge whether a status was actually correct, not just trust the system's own verdict. ([why](adr/0016-unified-logging.md))
+All four buckets write structured entries to one shared file, `logs/evaluation_log.jsonl`, via `log_utils.py`. Every entry carries `company_name` and `bucket` as top-level fields so cross-bucket, cross-company history is queryable without merging files. Granularity is one entry per attempt (Bucket A) or per criterion/call (B, C, D), each with a `stage_reached` field - chosen because that granularity proved sufficient for diagnosing every real live failure. The log's explicit purpose is to let a human independently judge whether a status was actually correct, not just trust the system's own verdict. ([why](adr/0016-unified-logging.md))
 
 `logs/` is gitignored: entries may contain real company names, claim text, and evidence excerpts from live runs.
 
@@ -134,5 +134,6 @@ All four buckets write structured entries to one shared file, `logs/evaluation_l
 
 Two deliberately different test classes, because they catch different classes of error and neither substitutes for the other ([the evidence](adr/0017-cross-cutting-lessons.md)):
 
-- **Deterministic suite** (`python -m pytest -m "not live_api" -q`) — no network, every LLM injected as a fake, runs in about a second. Proves the logic is internally consistent with its own assumptions. CI enforces a minimum coverage threshold on every push.
-- **Live tests** (`RUN_LIVE_API=1 python -m pytest -m live_api -v`) — real search, real pages, real models, real cost. Proves the assumptions about the outside world are actually correct. Three of the project's most consequential bugs were findable only this way.
+- **Deterministic suite** (`python -m pytest -m "not live_api" -q`) - no network, every LLM injected as a fake, runs in seconds. Includes a Hypothesis property suite asserting the deterministic checks' invariants for every generated input, pinned to a derandomized profile so CI never flakes ([why](adr/0025-property-based-testing.md)). Proves the logic is internally consistent with its own assumptions. CI enforces a minimum coverage threshold on every push.
+- **Live tests** (`RUN_LIVE_API=1 python -m pytest -m live_api -v`) - real search, real pages, real models, real cost. Proves the assumptions about the outside world are actually correct. Three of the project's most consequential bugs were findable only this way.
+- **Scored measurements** (`python scripts/triage_eval.py`) - the one LLM judgment in front of the verifier is measured against the labeled ground truth, deliberately and outside CI; misses are recorded as taxonomy findings, never tuned away ([why](adr/0024-triage-accuracy-eval.md)).

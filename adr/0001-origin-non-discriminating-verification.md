@@ -1,4 +1,4 @@
-# ADR-0001: Founding principle — non-discriminating verification
+# ADR-0001: Founding principle - non-discriminating verification
 
 ## Status
 
@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-A TSMC climate transition assessment was produced using AI-assisted research. It was "verified" by re-asking the same model "are you sure" multiple times in one session. That is not independent verification — the second and third pass have no new information and no different reasoning process from the first. The actual error that slipped through: an IIGCC NZIF 2.0 bucket label, "climate solutions bucket," that does not exist in the framework's five real alignment tiers. It went out in a real document before being caught — caught only by going back to the actual primary source document directly.
+A TSMC climate transition assessment was produced using AI-assisted research. It was "verified" by re-asking the same model "are you sure" multiple times in one session. That is not independent verification - the second and third pass have no new information and no different reasoning process from the first. The actual error that slipped through: an IIGCC NZIF 2.0 bucket label, "climate solutions bucket," that does not exist in the framework's five real alignment tiers. It went out in a real document before being caught - caught only by going back to the actual primary source document directly.
 
 ## Decision
 

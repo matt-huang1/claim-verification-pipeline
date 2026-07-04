@@ -6,32 +6,35 @@ What is built, tested, and live-verified today. For how the pieces fit together,
 
 All four verification types are implemented, tested, and live-verified end to end:
 
-- `agent_eval/pipeline.py` + `agent_eval/extraction.py` — Bucket A orchestration: domain check, web search, URL enforcement, page fetch, quote match with numeric token gate
-- `agent_eval/bucket_b_pipeline.py` + `agent_eval/criterion_evidence.py` — Bucket B: NZIF criteria evidence gathering (all six criteria, independently verified) and TPI Management Quality extraction (all 23 indicators, direct HTML parse)
-- `agent_eval/bucket_triage.py` + `agent_eval/source_extraction.py` + `agent_eval/reconciliation.py` + `agent_eval/bucket_c_pipeline.py` — Bucket C: triage, multi-source extraction, definition reconciliation
-- `agent_eval/bucket_d_analysis.py` + `agent_eval/bucket_d_pipeline.py` — Bucket D: assumption and causal chain extraction
-- `agent_eval/run_pipeline.py` — top-level dispatcher: routes any claim through triage to the right pipeline, consistent four-field return shape
-- `agent_eval/serialisation.py` — round-trip serialisation of all evidence types to JSON
-- `agent_eval/review.py` — terminal formatter for ClaimTag and pipeline result output
-- `agent_eval/ground_truth.py` — primary-source verified claims and metadata for 9 companies
-- `agent_eval/tpi_extract.py` — deterministic TPI Management Quality parser (raw HTML, no LLM)
-- `agent_eval/llm_client.py` — the single provider seam: every LLM-calling module reaches the model through the `LLMClient` interface (default: OpenAI), so swapping provider or model is a one-file change
-- `agent_eval/adversarial_eval.py` + `scripts/adversarial_eval.py` — deterministic self-evaluation of the Bucket A verifier (spoofed domains, hallucinated numbers, fabricated quotes vs. honest controls); every adversarial case caught with the correct specific status, offline and CI-gated
-- `scripts/run_batch.py` — batch runner producing `data/results.json`
-- `index.html` — pre-computed results browser (serve from repo root)
+- `agent_eval/pipeline.py` + `agent_eval/extraction.py` - Bucket A orchestration: domain check, web search, URL enforcement, page fetch, quote match with numeric token gate
+- `agent_eval/bucket_b_pipeline.py` + `agent_eval/criterion_evidence.py` - Bucket B: NZIF criteria evidence gathering (all six criteria, independently verified) and TPI Management Quality extraction (all 23 indicators, direct HTML parse)
+- `agent_eval/bucket_triage.py` + `agent_eval/source_extraction.py` + `agent_eval/reconciliation.py` + `agent_eval/bucket_c_pipeline.py` - Bucket C: triage, multi-source extraction, definition reconciliation
+- `agent_eval/bucket_d_analysis.py` + `agent_eval/bucket_d_pipeline.py` - Bucket D: assumption and causal chain extraction
+- `agent_eval/run_pipeline.py` - top-level dispatcher: routes any claim through triage to the right pipeline, consistent four-field return shape
+- `agent_eval/serialisation.py` - round-trip serialisation of all evidence types to JSON
+- `agent_eval/review.py` - terminal formatter for ClaimTag and pipeline result output
+- `agent_eval/ground_truth.py` - primary-source verified claims and metadata for 9 companies
+- `agent_eval/tpi_extract.py` - deterministic TPI Management Quality parser (raw HTML, no LLM)
+- `agent_eval/llm_client.py` - the single provider seam: every LLM-calling module reaches the model through the `LLMClient` interface (default: OpenAI), so swapping provider or model is a one-file change
+- `agent_eval/adversarial_eval.py` + `scripts/adversarial_eval.py` - deterministic self-evaluation of the Bucket A verifier (spoofed domains, hallucinated numbers, fabricated quotes vs. honest controls); every adversarial case caught with the correct specific status, offline and CI-gated
+- `agent_eval/triage_eval.py` + `scripts/triage_eval.py` - scored spot-check of the triage router against every labeled ground-truth claim; costs real API calls, run deliberately, misses recorded as findings rather than tuned away ([ADR-0024](adr/0024-triage-accuracy-eval.md))
+- `tests/test_properties.py` - Hypothesis property suite asserting the deterministic checks' invariants for every generated input (deterministic profile, CI-run; [ADR-0025](adr/0025-property-based-testing.md))
+- `scripts/run_batch.py` - batch runner producing `data/results.json`
+- `index.html` - pre-computed results browser (serve from repo root)
 
-**Ground truth companies:** TSMC, TotalEnergies, Patagonia, Antofagasta, Frontier Lithium, Vestas, Coal India, Cheniere, Microsoft — each chosen to test a specific structural gap in the verification system.
+**Ground truth companies:** TSMC, TotalEnergies, Patagonia, Antofagasta, Frontier Lithium, Vestas, Coal India, Cheniere, Microsoft - each chosen to test a specific structural gap in the verification system.
 
-**Tests:** a full deterministic suite (no network, every LLM injected as a fake; CI enforces a minimum coverage threshold). Every module also has a live API test (`RUN_LIVE_API=1`) that runs against real search results, real pages, and real models — because mocked tests cannot catch the class of bug that has actually appeared in this project.
+**Tests:** a full deterministic suite (no network, every LLM injected as a fake; CI enforces a minimum coverage threshold). Every module also has a live API test (`RUN_LIVE_API=1`) that runs against real search results, real pages, and real models - because mocked tests cannot catch the class of bug that has actually appeared in this project.
 
-**Structured log:** `logs/evaluation_log.jsonl` — every pipeline run writes a structured entry tagged with `company_name`, `bucket`, and outcome. Used for diagnosing live failures without throwaway scripts.
+**Structured log:** `logs/evaluation_log.jsonl` - every pipeline run writes a structured entry tagged with `company_name`, `bucket`, and outcome. Used for diagnosing live failures without throwaway scripts.
 
 ## Live-verified milestones
 
 Each of these ran against real APIs with no fixture or mock anywhere in the path. The full account of each, including the bugs the runs surfaced, is in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md):
 
-- **Bucket A** — the complete chain (Tavily search → model selection from real candidates → URL enforcement → real fetch → quote match) produced `"verified"` end to end on the real TSMC press release. ([details](adr/0007-page-fetch.md))
-- **Bucket B (NZIF)** — all six criteria returned real, verified evidence for TotalEnergies on the first live run; Patagonia's run surfaced a real bot-detection limitation and produced honest gaps instead of fabricated evidence. ([details](adr/0012-nzif-live-totalenergies-patagonia.md))
-- **Bucket B (TPI)** — TotalEnergies' real Level 5 result with failing indicators 21 and 22 fetched and tagged live; Patagonia's genuine absence from TPI's universe reported specifically as `company_not_in_tpi_universe`, not a generic failure. ([details](adr/0011-tpi-extract.md))
-- **Bucket C** — triage, per-source extraction, and reconciliation each live-verified individually, and the full chain live-verified through the dispatcher on the TSMC foundry market-share claim (342 seconds — the real cost of five sequential fetches plus multiple model calls). ([details](adr/0020-run-pipeline.md))
-- **Bucket D** — the TSMC counterfactual analysed live in 23 seconds with real populated assumptions and causal steps. ([details](adr/0019-bucket-d-analysis-and-pipeline.md))
+- **Bucket A** - the complete chain (Tavily search → model selection from real candidates → URL enforcement → real fetch → quote match) produced `"verified"` end to end on the real TSMC press release. ([details](adr/0007-page-fetch.md))
+- **Bucket B (NZIF)** - all six criteria returned real, verified evidence for TotalEnergies on the first live run; Patagonia's run surfaced a real bot-detection limitation and produced honest gaps instead of fabricated evidence. ([details](adr/0012-nzif-live-totalenergies-patagonia.md))
+- **Bucket B (TPI)** - TotalEnergies' real Level 5 result with failing indicators 21 and 22 fetched and tagged live; Patagonia's genuine absence from TPI's universe reported specifically as `company_not_in_tpi_universe`, not a generic failure. ([details](adr/0011-tpi-extract.md))
+- **Bucket C** - triage, per-source extraction, and reconciliation each live-verified individually, and the full chain live-verified through the dispatcher on the TSMC foundry market-share claim (342 seconds - the real cost of five sequential fetches plus multiple model calls). ([details](adr/0020-run-pipeline.md))
+- **Bucket D** - the TSMC counterfactual analysed live in 23 seconds with real populated assumptions and causal steps. ([details](adr/0019-bucket-d-analysis-and-pipeline.md))
+- **Triage routing** - the scored spot-check's first run (2026-07-04) routed 12/14 labeled ground-truth claims correctly (bucket_a 7/8, bucket_c 2/2, bucket_d 3/4); the two misses surfaced real taxonomy boundary gaps - systemic-causal claims and absence claims - recorded rather than tuned away. ([details](adr/0024-triage-accuracy-eval.md))

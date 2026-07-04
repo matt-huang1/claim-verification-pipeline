@@ -14,4 +14,4 @@ Keep the known open limitations named explicitly and maintained in their own doc
 
 ## Consequences
 
-- These are real, current gaps — named rather than left as implicit TODOs. They live in their own document, [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md), alongside the scope limits stated at the module level throughout this record.
+- These are real, current gaps - named rather than left as implicit TODOs. They live in their own document, [KNOWN_LIMITATIONS.md](../KNOWN_LIMITATIONS.md), alongside the scope limits stated at the module level throughout this record.
