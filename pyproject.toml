@@ -4,14 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claim-verification-pipeline"
-version = "0.2.0"
+# Single-sourced from agent_eval.__version__ (see [tool.setuptools.dynamic])
+# so the package version and the importable __version__ cannot drift.
+dynamic = ["version"]
 description = "Evidence-based verification pipeline for company climate claims."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Matthew Huang" }]
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "rapidfuzz>=3.0.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
-    "requests>=2.28.0",
+    # Floor raised past CVE-2024-47081 / CVE-2026-25645 (fixed in 2.32.4 and
+    # 2.33.0) — found by the pip-audit CI gate when it was introduced.
+    "requests>=2.33.0",
     "pypdf>=3.0.0",
     "tavily-python>=0.5.0",
 ]
@@ -29,8 +48,16 @@ dev = [
     "hypothesis>=6.100.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/matt-huang1/claim-verification-pipeline"
+"Live demo" = "https://matt-huang1.github.io/claim-verification-pipeline/"
+Changelog = "https://github.com/matt-huang1/claim-verification-pipeline/blob/main/CHANGELOG.md"
+
 [tool.setuptools]
 packages = ["agent_eval"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agent_eval.__version__" }
 
 [tool.setuptools.package-data]
 # py.typed marks the package as typed (PEP 561) so consumers' type checkers

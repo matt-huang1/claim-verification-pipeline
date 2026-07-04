@@ -18,7 +18,9 @@ from agent_eval.serialisation import (
 from agent_eval.tag_schema import ClaimTag
 from agent_eval.url_compare import same_url
 
-__version__ = "0.2.0"
+# Single source of truth for the package version — pyproject.toml reads it
+# via [tool.setuptools.dynamic], so bumping here bumps the built package.
+__version__ = "0.3.0"
 
 __all__ = [
     "ClaimTag",
